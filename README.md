@@ -40,19 +40,24 @@ Dự án được tổ chức theo cấu trúc phân tách rõ ràng giữa Clie
 
 ```
 lab02_mahoa/
-├── common/              # Chứa các Struct dữ liệu dùng chung (API Request/Response Models)
-├── server/              # Mã nguồn Backend
-│   ├── main.go          # Điểm khởi chạy Server
-│   ├── handlers.go      # Xử lý các API (Login, Upload, Share...)
-│   ├── db.go            # Cấu hình kết nối SQLite & GORM
-│   └── auth.go          # Logic xác thực JWT & Hash mật khẩu
-├── client/              # Mã nguồn Frontend (CLI App)
-│   ├── main.go          # Điểm khởi chạy Client, xử lý dòng lệnh
-│   ├── crypto.go        # Logic mã hóa AES & Diffie-Hellman
-│   └── api.go           # Xử lý gửi HTTP Request lên Server
-├── storage/             # Thư mục chứa file Database (app.db) - Tự sinh ra khi chạy
+├── client/              # Mã nguồn Client - Desktop GUI App
+│   ├── main.go          # Entry point - Khởi động Fyne GUI
+│   ├── gui.go           # Giao diện Login/Register và Notes Manager
+│   ├── api_client.go    # HTTP client gọi API backend
+│   └── crypto_utils.go  # AES-256-GCM encryption/decryption
+├── server/              # Mã nguồn Backend - RESTful API
+│   ├── main.go          # API server entry point
+│   ├── models.go        # Data models (User, Note, Request/Response)
+│   ├── auth.go          # JWT & Bcrypt authentication
+│   ├── handlers.go      # API endpoint handlers
+│   └── db.go            # SQLite database setup (GORM)
+├── storage/             # Thư mục chứa Database (auto-generated)
+│   └── app.db           # SQLite database file
 ├── go.mod               # Quản lý thư viện Go
 ├── go.sum               # Checksum các thư viện
+├── start.bat            # Script tự động khởi động (Windows)
+├── start.sh             # Script tự động khởi động (Linux/Mac)
+├── build.bat            # Script build executable
 └── README.md            # Tài liệu hướng dẫn này
 ```
 
@@ -60,14 +65,18 @@ lab02_mahoa/
 
 ## 🛠️ Công nghệ sử dụng
 
-- **Ngôn ngữ lập trình:** Go (Golang) 1.20+
-- **Giao thức:** RESTful API qua HTTP
-- **Cơ sở dữ liệu:** SQLite (Sử dụng thư viện ORM GORM)
-- **Thư viện Mật mã & Bảo mật:**
-  - `crypto/aes`, `crypto/cipher`: Mã hóa nội dung (Chuẩn AES)
-  - `crypto/ecdh` hoặc `crypto/elliptic`: Trao đổi khóa Diffie-Hellman
-  - `golang.org/x/crypto/bcrypt`: Băm mật khẩu an toàn
-  - `github.com/golang-jwt/jwt/v5`: Tạo và xác thực Token JWT
+### Backend (Server)
+- **Go (Golang)** 1.20+
+- **SQLite** với GORM ORM
+- **JWT** authentication (`github.com/golang-jwt/jwt/v5`)
+- **Bcrypt** password hashing (`golang.org/x/crypto/bcrypt`)
+- **RESTful API** với CORS middleware
+
+### Frontend (Client)
+- **Fyne v2.7** - Modern cross-platform GUI framework
+- **AES-256-GCM** encryption (`crypto/aes`, `crypto/cipher`)
+- **HTTP Client** - Gọi API backend
+- **Desktop App** - Native Windows/Linux/macOS
 
 ---
 
@@ -78,7 +87,7 @@ lab02_mahoa/
 Trước khi bắt đầu, hãy đảm bảo máy tính của bạn đã cài đặt:
 
 - **Go (Golang):** Phiên bản 1.20 trở lên
-- **Git:** Để quản lý mã nguồn (tùy chọn)
+- **Git Bash:** Để chạy script `start.sh` trên Windows (tùy chọn - có thể dùng `start.bat` thay thế)
 
 #### Cách cài đặt Go trên Windows
 
@@ -128,46 +137,38 @@ go mod tidy
 
 Lệnh này sẽ tự động đọc file `go.mod` và tải các dependencies về máy.
 
-### 3. Khởi chạy Server (Backend)
+### 3. Khởi chạy Server và CLient
 
-**Bước 1:** Mở Terminal đầu tiên và chạy Server:
+**Cách 1: Sử dụng script tự động (Đơn giản nhất)**
+
+-Chạy `./start.sh` trong Git Bash 
+
+**Cách 2: Chạy thủ công**
+
+Mở Terminal đầu tiên và chạy Server:
 
 ```bash
 cd c:\Users\Admin\lab02_mahoa
-go run server/main.go
+go run server/main.go server/auth.go server/db.go server/handlers.go server/models.go
+```
+
+**Cách 3: Build thành exe rồi chạy**
+
+```bash
+# Build
+cd server
+go build -o server.exe
+
+# Chạy
+./server.exe
 ```
 
 **Kết quả:** Bạn sẽ thấy thông báo:
 ```
-🚀 Server is running on http://localhost:8080
+🚀 RESTful API Server is running on http://localhost:8080
 ```
 
 Giữ Terminal này mở để Server tiếp tục chạy.
-
-### 4. Kiểm tra Client (Frontend CLI)
-
-**Bước 1:** Mở Terminal thứ hai và test kết nối:
-
-```bash
-cd c:\Users\Admin\lab02_mahoa
-go run client/main.go status
-```
-
-**Kết quả:** Nếu thấy output dạng này, Server đã chạy thành công:
-```
-✅ Server Status: {"status":"ok","message":"Server is running"}
-```
-
-**Bước 2:** Kiểm tra health check:
-
-```bash
-go run client/main.go health
-```
-
-**Kết quả:**
-```
-✅ Server Health: {"status":"healthy"}
-```
 
 ---
 
@@ -307,29 +308,55 @@ netstat -ano | findstr :8080
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     CLIENT (CLI Application)                 │
+│           CLIENT - Fyne Desktop GUI App                      │
 ├─────────────────────────────────────────────────────────────┤
-│  • main.go       - Xử lý CLI commands                        │
-│  • crypto.go     - AES-GCM encryption/decryption             │
-│  • api.go        - HTTP requests to Server                   │
-└────────────────────────────┬────────────────────────────────┘
-                             │ HTTP/REST API
-                             ↓
-┌─────────────────────────────────────────────────────────────┐
-│                  SERVER (Backend Application)                │
-├─────────────────────────────────────────────────────────────┤
-│  • main.go       - Server initialization                     │
-│  • handlers.go   - API endpoint handlers                     │
-│  • auth.go       - JWT & Password hashing (BCrypt)           │
-│  • db.go         - SQLite database connection (GORM)         │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-                             ↓
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  • main.go        - Khởi động Fyne app              │  │
+│  │  • gui.go         - Login/Register & Notes screens   │  │
+│  │  • api_client.go  - HTTP client gọi API backend     │  │
+│  │  • crypto_utils.go - AES-256-GCM encryption         │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                              │
+│  Tính năng:                                                  │
+│  ✓ Login/Register UI                                         │
+│  ✓ Notes Manager với Create/View/Delete                     │
+│  ✓ Client-side encryption (Zero-Knowledge)                   │
+│  ✓ JWT token management                                      │
+└───────────────────────────┬──────────────────────────────────┘
+                            │
+                            │ RESTful API (HTTP/JSON)
+                            │ CORS enabled
+                            │
+┌───────────────────────────▼──────────────────────────────────┐
+│              SERVER - RESTful API Backend                     │
+├──────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  • main.go     - API server với CORS                │  │
+│  │  • models.go   - Data structures                     │  │
+│  │  • auth.go     - JWT generation & Bcrypt hashing    │  │
+│  │  • handlers.go - API endpoints handlers             │  │
+│  │  • db.go       - SQLite + GORM setup                │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                              │
+│  API Endpoints:                                              │
+│  • POST   /api/auth/register                                 │
+│  • POST   /api/auth/login                                    │
+│  • POST   /api/notes          (JWT required)                 │
+│  • GET    /api/notes          (JWT required)                 │
+│  • GET    /api/notes/:id      (JWT required)                 │
+│  • DELETE /api/notes/:id      (JWT required)                 │
+└───────────────────────────┬──────────────────────────────────┘
+                            │
+                            ↓
                   ┌──────────────────┐
                   │  SQLite Database │
                   │  (storage/app.db)│
+                  │                  │
+                  │  • users         │
+                  │  • notes         │
+                  │  • shared_links  │
                   └──────────────────┘
-                       (Encrypted Data)
+                    (Encrypted Data)
 ```
 
 ---
@@ -355,6 +382,3 @@ netstat -ano | findstr :8080
    go run client/*.go share -id 1 -time 60
    # Chia sẻ URL với người khác
    ```
-
-
-
