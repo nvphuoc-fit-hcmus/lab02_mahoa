@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"lab02_mahoa/server/database"
+	"lab02_mahoa/server/handlers"
+	"lab02_mahoa/server/models"
 	"log"
 	"net/http"
 	"os"
@@ -13,8 +16,8 @@ func main() {
 		log.Fatalf("Failed to create storage directory: %v", err)
 	}
 
-	// Initialize database
-	if err := InitDB(); err != nil {
+	// Initialize database with models
+	if err := database.InitDB(&models.User{}, &models.Note{}, &models.SharedLink{}); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
@@ -65,30 +68,30 @@ func setupRoutes() {
 	}))
 
 	// Authentication endpoints (RESTful)
-	http.HandleFunc("/api/auth/register", corsMiddleware(RegisterHandler))
-	http.HandleFunc("/api/auth/login", corsMiddleware(LoginHandler))
-	http.HandleFunc("/api/auth/logout", corsMiddleware(LogoutHandler))
+	http.HandleFunc("/api/auth/register", corsMiddleware(handlers.RegisterHandler))
+	http.HandleFunc("/api/auth/login", corsMiddleware(handlers.LoginHandler))
+	http.HandleFunc("/api/auth/logout", corsMiddleware(handlers.LogoutHandler))
 
 	// Note management endpoints (RESTful)
 	http.HandleFunc("/api/notes", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			CreateNoteHandler(w, r)
+			handlers.CreateNoteHandler(w, r)
 		case http.MethodGet:
-			ListNotesHandler(w, r)
+			handlers.ListNotesHandler(w, r)
 		default:
-			respondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			handlers.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		}
 	}))
 
 	http.HandleFunc("/api/notes/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			GetNoteHandler(w, r)
+			handlers.GetNoteHandler(w, r)
 		case http.MethodDelete:
-			DeleteNoteHandler(w, r)
+			handlers.DeleteNoteHandler(w, r)
 		default:
-			respondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			handlers.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		}
 	}))
 }

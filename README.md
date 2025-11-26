@@ -42,21 +42,37 @@ Dự án được tổ chức theo cấu trúc phân tách rõ ràng giữa Clie
 lab02_mahoa/
 ├── client/              # Mã nguồn Client - Desktop GUI App
 │   ├── main.go          # Entry point - Khởi động Fyne GUI
-│   ├── gui.go           # Giao diện Login/Register và Notes Manager
-│   ├── api_client.go    # HTTP client gọi API backend
-│   └── crypto_utils.go  # AES-256-GCM encryption/decryption
+│   ├── ui/              # Module giao diện người dùng
+│   │   ├── gui.go       # GUI coordinator
+│   │   ├── login/       # Module màn hình đăng nhập/đăng ký
+│   │   │   └── login_screen.go
+│   │   └── notes/       # Module màn hình notes
+│   │       └── notes_screen.go
+│   ├── api/             # Module HTTP client
+│   │   └── client.go    # API client gọi backend
+│   └── crypto/          # Module mã hóa
+│       └── encryption.go # AES-256-GCM encryption
 ├── server/              # Mã nguồn Backend - RESTful API
 │   ├── main.go          # API server entry point
-│   ├── models.go        # Data models (User, Note, Request/Response)
-│   ├── auth.go          # JWT & Bcrypt authentication
-│   ├── handlers.go      # API endpoint handlers
-│   └── db.go            # SQLite database setup (GORM)
+│   ├── auth/            # Module xác thực
+│   │   ├── jwt.go       # JWT token generation & validation
+│   │   └── password.go  # Bcrypt password hashing
+│   ├── database/        # Module database
+│   │   └── database.go  # SQLite connection & migration
+│   ├── handlers/        # Module xử lý HTTP requests
+│   │   ├── auth_handler.go # Login/Register handlers
+│   │   ├── note_handler.go # CRUD operations cho notes
+│   │   └── utils.go        # JSON response helpers
+│   └── models/          # Module data models
+│       ├── user.go      # User model
+│       ├── note.go      # Note & SharedLink models
+│       └── requests.go  # Request/Response structs
 ├── storage/             # Thư mục chứa Database (auto-generated)
 │   └── app.db           # SQLite database file
 ├── go.mod               # Quản lý thư viện Go
 ├── go.sum               # Checksum các thư viện
 ├── start.bat            # Script tự động khởi động (Windows)
-├── start.sh             # Script tự động khởi động (Linux/Mac)
+├── start.sh             # Script tự động khởi động (Linux/Mac/Git Bash)
 ├── build.bat            # Script build executable
 └── README.md            # Tài liệu hướng dẫn này
 ```
@@ -311,10 +327,12 @@ netstat -ano | findstr :8080
 │           CLIENT - Fyne Desktop GUI App                      │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │  • main.go        - Khởi động Fyne app              │  │
-│  │  • gui.go         - Login/Register & Notes screens   │  │
-│  │  • api_client.go  - HTTP client gọi API backend     │  │
-│  │  • crypto_utils.go - AES-256-GCM encryption         │  │
+│  │  • main.go           - Khởi động Fyne app           │  │
+│  │  • ui/gui.go         - GUI coordinator              │  │
+│  │  • ui/login/         - Login/Register screen        │  │
+│  │  • ui/notes/         - Notes screen                 │  │
+│  │  • api/client.go     - HTTP client gọi API backend  │  │
+│  │  • crypto/encryption.go - AES-256-GCM encryption    │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                              │
 │  Tính năng:                                                  │
@@ -331,11 +349,14 @@ netstat -ano | findstr :8080
 │              SERVER - RESTful API Backend                     │
 ├──────────────────────────────────────────────────────────────┤
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │  • main.go     - API server với CORS                │  │
-│  │  • models.go   - Data structures                     │  │
-│  │  • auth.go     - JWT generation & Bcrypt hashing    │  │
-│  │  • handlers.go - API endpoints handlers             │  │
-│  │  • db.go       - SQLite + GORM setup                │  │
+│  │  • main.go                - API server với CORS      │  │
+│  │  • auth/jwt.go            - JWT generation          │  │
+│  │  • auth/password.go       - Bcrypt hashing          │  │
+│  │  • database/database.go   - SQLite + GORM setup     │  │
+│  │  • handlers/auth_handler.go - Auth endpoints        │  │
+│  │  • handlers/note_handler.go - Notes endpoints       │  │
+│  │  • handlers/utils.go      - JSON helpers            │  │
+│  │  • models/*               - Data structures         │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                              │
 │  API Endpoints:                                              │
