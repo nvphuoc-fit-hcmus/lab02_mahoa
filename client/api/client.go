@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 const BaseURL = "http://localhost:8080/api"
@@ -13,7 +14,7 @@ const BaseURL = "http://localhost:8080/api"
 var (
 	CurrentUserID   uint
 	CurrentUsername string
-	CurrentPassword string 
+	CurrentPassword string
 	AuthToken       string // JWT Token để gọi API
 )
 
@@ -49,10 +50,19 @@ type CreateNoteRequest struct {
 
 // Note represents a note from the server
 type Note struct {
-	ID               uint   `json:"id"`
-	Title            string `json:"title"`
-	EncryptedContent string `json:"encrypted_content"`
-	IV               string `json:"iv"`
+	ID               uint      `json:"id"`
+	Title            string    `json:"title"`
+	EncryptedContent string    `json:"encrypted_content"`
+	EncryptedKey     string    `json:"encrypted_key"`
+	IV               string    `json:"iv"`
+	CreatedAt        time.Time `json:"created_at"`
+	IsShared         bool      `json:"is_shared"`
+}
+
+// ListNotesResponse represents the response from listing notes
+type ListNotesResponse struct {
+	Notes []Note `json:"notes"`
+	Count int    `json:"count"`
 }
 
 // Register creates a new user account
@@ -108,16 +118,12 @@ func (c *Client) Login(username, password string) (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
 		return "", err
 	}
-	//cập nhật trạng thái toàn cục
+
 	c.Token = loginResp.Token
-	AuthToken = loginResp.Token
-	CurrentUsername = username
-	CurrentPassword = password 
-	
 	return loginResp.Token, nil
 }
 
-// CreateNote creates a new encrypted note
+// CreateNote creates a new encrypted note with encrypted key
 func (c *Client) CreateNote(title, encryptedContent, encryptedKey, iv string) error {
 	reqBody := CreateNoteRequest{
 		Title:            title,
@@ -139,9 +145,7 @@ func (c *Client) CreateNote(title, encryptedContent, encryptedKey, iv string) er
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 
-	client := &http.Client{}
-	
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -175,12 +179,13 @@ func (c *Client) ListNotes() ([]Note, error) {
 		return nil, fmt.Errorf("list notes failed: %s", string(body))
 	}
 
-	var notes []Note
-	if err := json.NewDecoder(resp.Body).Decode(&notes); err != nil {
+	// Parse response with nested notes array
+	var response ListNotesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, err
 	}
 
-	return notes, nil
+	return response.Notes, nil
 }
 
 // DeleteNote deletes a note by ID
@@ -204,4 +209,73 @@ func (c *Client) DeleteNote(id uint) error {
 	}
 
 	return nil
+}
+
+// RevokeShare revokes all sharing links for a note
+func (c *Client) RevokeShare(id uint) error {
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/notes/%d/revoke", BaseURL, id), nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("revoke share failed: %s", string(body))
+	}
+
+	return nil
+}
+
+// CreateShare creates a share link for a note
+func (c *Client) CreateShare(id uint, durationHours int) (string, error) {
+	if durationHours == 0 {
+		durationHours = 24
+	}
+
+	reqBody := map[string]int{
+		"duration_hours": durationHours,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/notes/%d/share", BaseURL, id), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("create share failed: %s", string(body))
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return "", err
+	}
+
+	if shareToken, ok := response["share_token"].(string); ok {
+		return shareToken, nil
+	}
+
+	return "", fmt.Errorf("no share token in response")
 }

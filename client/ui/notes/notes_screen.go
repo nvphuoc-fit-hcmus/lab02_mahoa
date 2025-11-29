@@ -5,24 +5,23 @@ import (
 	"image/color"
 	"io"
 	"lab02_mahoa/client/api"
-	"lab02_mahoa/client/crypto" // Import thêm để mã hóa
-	"path/filepath"             // Import thêm để xử lý tên file
+	"lab02_mahoa/client/crypto"
+	"path/filepath"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/storage" // Import thêm để lọc file
 	"fyne.io/fyne/v2/widget"
 )
 
 // Screen displays the notes page after login
 func Screen(window fyne.Window, apiClient *api.Client, username string, onLogout func()) {
-	// Gradient background 
+	// Gradient background
 	gradientBg := canvas.NewRectangle(color.RGBA{R: 99, G: 102, B: 241, A: 255})
 
-	// Header section 
+	// Header section
 	headerTitle := canvas.NewText("📝 Secure Notes", color.White)
 	headerTitle.TextSize = 28
 	headerTitle.TextStyle = fyne.TextStyle{Bold: true}
@@ -39,187 +38,272 @@ func Screen(window fyne.Window, apiClient *api.Client, username string, onLogout
 		layout.NewSpacer(),
 	)
 
-	// Success card (GIỮ NGUYÊN)
-	successCardBg := canvas.NewRectangle(color.White)
+	// Status label for feedback
+	statusLabel := widget.NewLabel("")
 
-	successIcon := canvas.NewText("✅", color.RGBA{R: 34, G: 197, B: 94, A: 255})
-	successIcon.TextSize = 64
-	successIcon.Alignment = fyne.TextAlignCenter
+	// Notes list container
+	notesContainer := container.NewVBox()
+	notesScroll := container.NewScroll(notesContainer)
+	notesScroll.SetMinSize(fyne.NewSize(700, 300))
 
-	successTitle := canvas.NewText("Welcome Back!", color.RGBA{R: 31, G: 41, B: 55, A: 255})
-	successTitle.TextSize = 24
-	successTitle.TextStyle = fyne.TextStyle{Bold: true}
-	successTitle.Alignment = fyne.TextAlignCenter
+	// Refresh function - will be defined recursively
+	var refreshNotes func()
+	refreshNotes = func() {
+		// Clear previous list
+		notesContainer.RemoveAll()
 
-	successMsg := canvas.NewText("You have successfully logged in", color.RGBA{R: 107, G: 114, B: 128, A: 255})
-	successMsg.TextSize = 14
-	successMsg.Alignment = fyne.TextAlignCenter
+		// Call API to get notes
+		notes, err := apiClient.ListNotes()
+		if err != nil {
+			statusLabel.SetText("❌ Error loading notes: " + err.Error())
+			notesContainer.Add(widget.NewLabel("❌ Error loading notes"))
+			notesContainer.Refresh()
+			return
+		}
 
-	secureInfo := canvas.NewText("🔒 Your data is end-to-end encrypted", color.RGBA{R: 99, G: 102, B: 241, A: 255})
-	secureInfo.TextSize = 13
-	secureInfo.Alignment = fyne.TextAlignCenter
+		if len(notes) == 0 {
+			notesContainer.Add(
+				container.NewCenter(
+					widget.NewLabel("📭 No notes yet. Create your first note!"),
+				),
+			)
+			statusLabel.SetText("✅ No notes found")
+		} else {
+			statusLabel.SetText(fmt.Sprintf("✅ %d notes loaded", len(notes)))
 
-	successCard := container.NewMax(
-		successCardBg,
-		container.NewPadded(
-			container.NewVBox(
-				layout.NewSpacer(),
-				container.NewCenter(successIcon),
-				layout.NewSpacer(),
-				container.NewCenter(successTitle),
-				layout.NewSpacer(),
-				container.NewCenter(successMsg),
-				container.NewCenter(secureInfo),
-				layout.NewSpacer(),
-			),
-		),
-	)
+			for _, note := range notes {
+				// Create note card
+				noteCard := createNoteCard(note, apiClient, window, refreshNotes)
+				notesContainer.Add(noteCard)
+			}
+		}
 
-	// ---------------------------------------------------------
-	// [PHẦN THÊM MỚI] UPLOAD FORM CARD (Code thêm bắt đầu từ đây)
-	// ---------------------------------------------------------
+		notesContainer.Refresh()
+		notesScroll.Refresh()
+	}
 
-	uploadCardBg := canvas.NewRectangle(color.White) // Nền trắng giống card trên
+	// Upload section
+	uploadTitle := canvas.NewText("📤 Upload New Note", color.RGBA{R: 31, G: 41, B: 55, A: 255})
+	uploadTitle.TextSize = 16
+	uploadTitle.TextStyle = fyne.TextStyle{Bold: true}
 
-	// UI: Tiêu đề form
-	lblFormTitle := canvas.NewText("Upload New Encrypted Note", color.RGBA{R: 55, G: 65, B: 81, A: 255})
-	lblFormTitle.TextStyle = fyne.TextStyle{Bold: true}
-	lblFormTitle.TextSize = 16
-	lblFormTitle.Alignment = fyne.TextAlignCenter
-
-	// UI: Ô nhập
-	titleEntry := widget.NewEntry()
-	titleEntry.PlaceHolder = "Enter note title..."
-
-	// UI: Chọn file
-	var fileContent []byte // Biến lưu file RAM
-	statusLabel := widget.NewLabel("No file selected")
-	statusLabel.Alignment = fyne.TextAlignCenter
-
-	btnSelectFile := widget.NewButton("📂 Select File", func() {
-		fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
-			if err != nil || reader == nil {
+	// File upload button
+	uploadBtn := widget.NewButton("Choose File & Upload", func() {
+		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err != nil {
+				statusLabel.SetText("❌ Error: " + err.Error())
+				return
+			}
+			if reader == nil {
 				return
 			}
 			defer reader.Close()
-			data, err := io.ReadAll(reader)
+
+			// Read file
+			content, err := io.ReadAll(reader)
 			if err != nil {
-				dialog.ShowError(err, window)
+				statusLabel.SetText("❌ Error reading file: " + err.Error())
 				return
 			}
-			fileContent = data
-			statusLabel.SetText("Selected: " + filepath.Base(reader.URI().Path()))
+
+			fileName := filepath.Base(reader.URI().String())
+
+			// Generate key
+			key, err := crypto.GenerateKey()
+			if err != nil {
+				statusLabel.SetText("❌ Key generation error: " + err.Error())
+				return
+			}
+
+			// Encrypt content
+			encryptedContent, iv, err := crypto.EncryptAES(string(content), key)
+			if err != nil {
+				statusLabel.SetText("❌ Encryption error: " + err.Error())
+				return
+			}
+
+			// Encrypt key
+			keyStr := fmt.Sprintf("key_%s", fileName)
+			encryptedKey, _, err := crypto.EncryptAES(keyStr, key)
+			if err != nil {
+				statusLabel.SetText("❌ Key encryption error: " + err.Error())
+				return
+			}
+
+			statusLabel.SetText("⏳ Uploading...")
+			
+			// Upload to server
+			if err := apiClient.CreateNote(fileName, encryptedContent, encryptedKey, iv); err != nil {
+				statusLabel.SetText("❌ Upload error: " + err.Error())
+				return
+			}
+
+			statusLabel.SetText("✅ Note uploaded successfully!")
+			refreshNotes()
 		}, window)
-		fileDialog.SetFilter(storage.NewExtensionFileFilter([]string{".txt", ".pdf", ".png", ".jpg"}))
-		fileDialog.Show()
 	})
 
-	// UI: Nút Upload
-	btnUpload := widget.NewButton("🔒 Encrypt & Upload", func() {
-		// 1. Validate
-		if titleEntry.Text == "" || len(fileContent) == 0 {
-			dialog.ShowError(fmt.Errorf("Please enter title and select a file"), window)
-			return
-		}
-
-		// 2. Client-side Encryption
-		statusLabel.SetText("Encrypting...")
-		
-		// Sinh khóa file
-		fileKey, err := crypto.GenerateKey()
-		if err != nil {
-			dialog.ShowError(err, window)
-			return
-		}
-
-		// Mã hóa nội dung
-		encryptedContent, iv, err := crypto.EncryptAES(string(fileContent), fileKey)
-		if err != nil {
-			dialog.ShowError(err, window)
-			return
-		}
-
-		// Mã hóa khóa file bằng password (lấy từ api.CurrentPassword)
-		if api.CurrentPassword == "" {
-			dialog.ShowError(fmt.Errorf("Session error. Please relogin"), window)
-			return
-		}
-		masterKey := crypto.DeriveKeyFromPassword(api.CurrentPassword, api.CurrentUsername)
-		encryptedKey, err := crypto.WrapKey(fileKey, masterKey)
-		if err != nil {
-			dialog.ShowError(err, window)
-			return
-		}
-
-		// 3. Send to Server
-		statusLabel.SetText("Uploading...")
-		err = apiClient.CreateNote(titleEntry.Text, encryptedContent, encryptedKey, iv)
-		if err != nil {
-			dialog.ShowError(err, window)
-			statusLabel.SetText("Upload Failed")
-		} else {
-			dialog.ShowInformation("Success", "Note encrypted and uploaded!", window)
-			titleEntry.SetText("")
-			fileContent = nil
-			statusLabel.SetText("Ready for next file")
-		}
-	})
-	btnUpload.Importance = widget.HighImportance
-
-	// Gom nhóm phần Upload vào 1 Card
-	uploadFormContent := container.NewVBox(
-		lblFormTitle,
-		widget.NewSeparator(),
-		widget.NewLabel("Title:"),
-		titleEntry,
-		widget.NewLabel("Content:"),
-		btnSelectFile,
-		statusLabel,
-		layout.NewSpacer(),
-		btnUpload,
+	uploadForm := container.NewVBox(
+		uploadTitle,
+		uploadBtn,
 	)
 
-	uploadCard := container.NewMax(
-		uploadCardBg,
-		container.NewPadded(
-			container.NewPadded(uploadFormContent),
-		),
-	)
-	// ---------------------------------------------------------
-	// [KẾT THÚC PHẦN THÊM MỚI]
-	// ---------------------------------------------------------
-
-	// Logout button (GIỮ NGUYÊN)
+	// Action buttons
 	logoutBtn := widget.NewButton("🚪 Logout", func() {
-		api.AuthToken = ""
+		apiClient.Token = ""
 		onLogout()
 	})
 	logoutBtn.Importance = widget.DangerImportance
 
-	// Main content layout (CẬP NHẬT: Thêm uploadCard vào danh sách)
-	mainContent := container.NewVBox(
+	actionBar := container.NewHBox(
 		layout.NewSpacer(),
-		header,
-		layout.NewSpacer(),
-		container.NewPadded(
-			container.NewPadded(successCard), // Card cũ
-		),
-		container.NewPadded(
-			container.NewPadded(uploadCard),  // Card mới thêm vào
-		),
-		layout.NewSpacer(),
-		container.NewCenter(logoutBtn),
-		layout.NewSpacer(),
+		logoutBtn,
 	)
 
-	// Scroll Container (Thêm cái này để nếu màn hình nhỏ thì cuộn được)
-	scrollContainer := container.NewVScroll(mainContent)
+	// Notes list section
+	notesTitle := canvas.NewText("📋 Your Notes", color.RGBA{R: 31, G: 41, B: 55, A: 255})
+	notesTitle.TextSize = 16
+	notesTitle.TextStyle = fyne.TextStyle{Bold: true}
+
+	notesSection := container.NewVBox(
+		notesTitle,
+		notesScroll,
+	)
+
+	// Main content
+	mainContent := container.NewVBox(
+		header,
+		layout.NewSpacer(),
+		uploadForm,
+		layout.NewSpacer(),
+		notesSection,
+		layout.NewSpacer(),
+		statusLabel,
+		actionBar,
+	)
+
+	// Scrollable main content
+	scrollContent := container.NewScroll(mainContent)
 
 	// Final layout
 	content := container.NewMax(
 		gradientBg,
-		scrollContainer, // Dùng scroll thay vì mainContent trực tiếp
+		container.NewPadded(scrollContent),
 	)
 
 	window.SetContent(content)
+
+	// Load notes on screen open
+	refreshNotes()
+}
+
+// createNoteCard creates a card widget for a single note
+func createNoteCard(note api.Note, apiClient *api.Client, window fyne.Window, onRefresh func()) fyne.CanvasObject {
+	// Card background
+	cardBg := canvas.NewRectangle(color.White)
+
+	// Note title with share status icon
+	titleText := canvas.NewText(note.Title, color.RGBA{R: 31, G: 41, B: 55, A: 255})
+	titleText.TextSize = 14
+	titleText.TextStyle = fyne.TextStyle{Bold: true}
+
+	// Share status icon
+	var shareStatusIcon string
+	var shareStatusColor color.Color
+	if note.IsShared {
+		shareStatusIcon = "🌐 Shared"
+		shareStatusColor = color.RGBA{R: 34, G: 197, B: 94, A: 255} // Green
+	} else {
+		shareStatusIcon = "🔒 Private"
+		shareStatusColor = color.RGBA{R: 107, G: 114, B: 128, A: 255} // Gray
+	}
+
+	shareStatus := canvas.NewText(shareStatusIcon, shareStatusColor)
+	shareStatus.TextSize = 12
+	shareStatus.TextStyle = fyne.TextStyle{Bold: true}
+
+	titleContainer := container.NewHBox(
+		titleText,
+		layout.NewSpacer(),
+		shareStatus,
+	)
+
+	// Note info
+	sizeText := canvas.NewText(fmt.Sprintf("Size: %d bytes", len(note.EncryptedContent)), color.RGBA{R: 107, G: 114, B: 128, A: 255})
+	sizeText.TextSize = 12
+
+	createdText := canvas.NewText(fmt.Sprintf("Created: %s", note.CreatedAt.Format("2006-01-02 15:04")), color.RGBA{R: 107, G: 114, B: 128, A: 255})
+	createdText.TextSize = 12
+
+	// Delete button
+	deleteBtn := widget.NewButton("🗑️ Delete", func() {
+		dialog.ShowConfirm("Delete Note", "Are you sure you want to delete this note?", func(confirmed bool) {
+			if confirmed {
+				if err := apiClient.DeleteNote(note.ID); err != nil {
+					dialog.ShowError(fmt.Errorf("delete failed: %w", err), window)
+					return
+				}
+				dialog.ShowInformation("Success", "Note deleted successfully", window)
+				onRefresh()
+			}
+		}, window)
+	})
+	deleteBtn.Importance = widget.DangerImportance
+
+	// Revoke button (only show if shared)
+	var revokeBtn *widget.Button
+	if note.IsShared {
+		revokeBtn = widget.NewButton("🔐 Revoke Share", func() {
+			if err := apiClient.RevokeShare(note.ID); err != nil {
+				dialog.ShowError(fmt.Errorf("revoke failed: %w", err), window)
+				return
+			}
+			dialog.ShowInformation("Success", "Sharing revoked successfully", window)
+			onRefresh()
+		})
+	} else {
+		revokeBtn = widget.NewButton("🔐 Revoke Share", func() {})
+		revokeBtn.Disable() // Disable if not shared
+	}
+
+	// Share button (to create share link)
+	shareBtn := widget.NewButton("🌐 Share", func() {
+		if shareToken, err := apiClient.CreateShare(note.ID, 24); err != nil {
+			dialog.ShowError(fmt.Errorf("share failed: %w", err), window)
+		} else {
+			shareURL := fmt.Sprintf("http://localhost:8080/share/%s", shareToken)
+			dialog.ShowInformation("Share Link Created", "Share URL:\n"+shareURL+"\n\nValid for 24 hours", window)
+			onRefresh()
+		}
+	})
+
+	// Button container
+	buttonContainer := container.NewHBox(
+		deleteBtn,
+		shareBtn,
+		revokeBtn,
+		layout.NewSpacer(),
+	)
+
+	// Note content
+	noteInfo := container.NewVBox(
+		titleContainer,
+		sizeText,
+		createdText,
+		buttonContainer,
+	)
+
+	// Card container
+	card := container.NewMax(
+		cardBg,
+		container.NewPadded(noteInfo),
+	)
+
+	// Add border effect by wrapping in a box
+	border := container.NewBorder(
+		nil, nil, nil, nil,
+		card,
+	)
+
+	return border
 }

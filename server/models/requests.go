@@ -25,6 +25,11 @@ type CreateNoteRequest struct {
 	IV               string `json:"iv"`
 }
 
+// CreateShareRequest for creating a share link
+type CreateShareRequest struct {
+	DurationHours int `json:"duration_hours"` // How many hours the link is valid (default 24)
+}
+
 // Response Models
 
 // LoginResponse returns JWT token
@@ -54,6 +59,7 @@ type NoteResponse struct {
 	EncryptedKey     string    `json:"encrypted_key"`
 	IV               string    `json:"iv"`
 	CreatedAt        time.Time `json:"created_at"`
+	IsShared         bool      `json:"is_shared"` // Track if note has active shares
 }
 
 // ListNotesResponse for returning list of notes
