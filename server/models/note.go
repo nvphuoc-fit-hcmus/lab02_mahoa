@@ -11,6 +11,7 @@ type Note struct {
 	IV               string    `gorm:"not null" json:"iv"` // Initialization Vector
 	CreatedAt        time.Time `json:"created_at"`
 	User             User      `gorm:"foreignKey:UserID" json:"-"`
+	EncryptedKey     string    `gorm:"type:text;not null" json:"encrypted_key"`
 }
 
 // SharedLink represents a time-limited sharing link

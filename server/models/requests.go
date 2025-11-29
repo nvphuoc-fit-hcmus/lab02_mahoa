@@ -18,9 +18,11 @@ type LoginRequest struct {
 
 // CreateNoteRequest for creating a new note
 type CreateNoteRequest struct {
-	Title            string `json:"title" binding:"required"`
-	EncryptedContent string `json:"encrypted_content" binding:"required"`
-	IV               string `json:"iv" binding:"required"`
+	Title            string `json:"title"`
+	EncryptedContent string `json:"encrypted_content"`
+	
+	EncryptedKey     string `json:"encrypted_key"`
+	IV               string `json:"iv"`
 }
 
 // Response Models
@@ -49,6 +51,7 @@ type NoteResponse struct {
 	ID               uint      `json:"id"`
 	Title            string    `json:"title"`
 	EncryptedContent string    `json:"encrypted_content"`
+	EncryptedKey     string    `json:"encrypted_key"`
 	IV               string    `json:"iv"`
 	CreatedAt        time.Time `json:"created_at"`
 }

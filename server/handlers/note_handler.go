@@ -35,10 +35,10 @@ func CreateNoteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate input
-	if req.Title == "" || req.EncryptedContent == "" || req.IV == "" {
-		RespondWithError(w, http.StatusBadRequest, "Title, encrypted content, and IV are required")
-		return
-	}
+	if req.Title == "" || req.EncryptedContent == "" || req.IV == "" || req.EncryptedKey == "" { // <--- CẬP NHẬT DÒNG NÀY
+        RespondWithError(w, http.StatusBadRequest, "Title, content, IV and encrypted key are required")
+        return
+    }
 
 	db := database.GetDB()
 
@@ -48,6 +48,7 @@ func CreateNoteHandler(w http.ResponseWriter, r *http.Request) {
 		Title:            req.Title,
 		EncryptedContent: req.EncryptedContent,
 		IV:               req.IV,
+		EncryptedKey:     req.EncryptedKey,
 	}
 
 	if err := db.Create(&note).Error; err != nil {
@@ -60,6 +61,7 @@ func CreateNoteHandler(w http.ResponseWriter, r *http.Request) {
 		ID:               note.ID,
 		Title:            note.Title,
 		EncryptedContent: note.EncryptedContent,
+		EncryptedKey:     note.EncryptedKey,
 		IV:               note.IV,
 		CreatedAt:        note.CreatedAt,
 	})
@@ -96,6 +98,7 @@ func ListNotesHandler(w http.ResponseWriter, r *http.Request) {
 			ID:               note.ID,
 			Title:            note.Title,
 			EncryptedContent: note.EncryptedContent,
+			EncryptedKey:     note.EncryptedKey,
 			IV:               note.IV,
 			CreatedAt:        note.CreatedAt,
 		}
@@ -152,6 +155,7 @@ func GetNoteHandler(w http.ResponseWriter, r *http.Request) {
 		ID:               note.ID,
 		Title:            note.Title,
 		EncryptedContent: note.EncryptedContent,
+		EncryptedKey:     note.EncryptedKey,
 		IV:               note.IV,
 		CreatedAt:        note.CreatedAt,
 	})

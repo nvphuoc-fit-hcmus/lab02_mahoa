@@ -90,6 +90,9 @@ func Screen(window fyne.Window, apiClient *api.Client, onLoginSuccess func(usern
 		}
 
 		apiClient.Token = token
+		api.AuthToken = token
+		api.CurrentUsername = username
+		api.CurrentPassword = password
 		setStatus("✅ Login successful!", false)
 		onLoginSuccess(username, key)
 	})

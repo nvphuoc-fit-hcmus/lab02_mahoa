@@ -10,6 +10,13 @@ import (
 
 const BaseURL = "http://localhost:8080/api"
 
+var (
+	CurrentUserID   uint
+	CurrentUsername string
+	CurrentPassword string 
+	AuthToken       string // JWT Token để gọi API
+)
+
 type Client struct {
 	Token string
 }
@@ -36,6 +43,7 @@ type LoginResponse struct {
 type CreateNoteRequest struct {
 	Title            string `json:"title"`
 	EncryptedContent string `json:"encrypted_content"`
+	EncryptedKey     string `json:"encrypted_key"`
 	IV               string `json:"iv"`
 }
 
@@ -100,16 +108,21 @@ func (c *Client) Login(username, password string) (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
 		return "", err
 	}
-
+	//cập nhật trạng thái toàn cục
 	c.Token = loginResp.Token
+	AuthToken = loginResp.Token
+	CurrentUsername = username
+	CurrentPassword = password 
+	
 	return loginResp.Token, nil
 }
 
 // CreateNote creates a new encrypted note
-func (c *Client) CreateNote(title, encryptedContent, iv string) error {
+func (c *Client) CreateNote(title, encryptedContent, encryptedKey, iv string) error {
 	reqBody := CreateNoteRequest{
 		Title:            title,
 		EncryptedContent: encryptedContent,
+		EncryptedKey:     encryptedKey,
 		IV:               iv,
 	}
 
@@ -126,7 +139,9 @@ func (c *Client) CreateNote(title, encryptedContent, iv string) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{}
+	
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
