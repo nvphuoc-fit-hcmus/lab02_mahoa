@@ -384,22 +384,132 @@ netstat -ano | findstr :8080
 
 ## 🧪 Testing
 
-Để kiểm tra các tính năng, bạn có thể:
+### Test Tự động (Unit Tests)
+
+Hệ thống có bộ test tự động hoàn chỉnh cho chức năng xác thực người dùng (Authentication).
+
+#### Cấu trúc Test
+
+```
+test/
+└── auth/                          # Test xác thực người dùng
+    ├── register_test.go           # Test đăng ký người dùng
+    ├── login_test.go              # Test đăng nhập
+    ├── password_test.go           # Test hash và verify mật khẩu
+    └── jwt_test.go                # Test JWT token
+```
+
+#### Chạy Test
+
+**1. Chạy tất cả test:**
+```bash
+go test ./test/auth/... -v
+```
+
+**2. Chạy test cụ thể:**
+```bash
+# Test đăng ký
+go test ./test/auth/... -v -run TestRegister
+
+# Test đăng nhập
+go test ./test/auth/... -v -run TestLogin
+
+# Test password hashing
+go test ./test/auth/... -v -run TestPassword
+
+# Test JWT
+go test ./test/auth/... -v -run TestJWT
+```
+
+**3. Xem test coverage:**
+```bash
+go test ./test/auth/... -cover
+```
+
+#### Các Test Cases
+
+**✅ Test Đăng ký (register_test.go):**
+- ✓ Đăng ký thành công với thông tin hợp lệ
+- ✓ Từ chối username đã tồn tại
+- ✓ Từ chối username quá ngắn (< 3 ký tự)
+- ✓ Từ chối password quá ngắn (< 6 ký tự)
+- ✓ Từ chối request body không hợp lệ
+- ✓ Từ chối HTTP method sai
+- ✓ Xử lý các trường rỗng
+
+**✅ Test Đăng nhập (login_test.go):**
+- ✓ Đăng nhập thành công và nhận JWT token
+- ✓ Từ chối mật khẩu sai
+- ✓ Từ chối username không tồn tại
+- ✓ Kiểm tra phân biệt chữ hoa/thường
+- ✓ Cho phép đăng nhập nhiều lần
+- ✓ Xử lý thông tin đăng nhập rỗng
+
+**✅ Test Mật khẩu (password_test.go):**
+- ✓ Hash password với bcrypt
+- ✓ Mỗi lần hash tạo salt khác nhau
+- ✓ Verify password đúng/sai
+- ✓ Phân biệt chữ hoa/thường
+- ✓ Hỗ trợ ký tự đặc biệt và Unicode
+- ✓ Giới hạn password dài (> 72 bytes)
+
+**✅ Test JWT Token (jwt_test.go):**
+- ✓ Tạo JWT token hợp lệ
+- ✓ Validate token thành công
+- ✓ Từ chối token không hợp lệ/bị sửa đổi
+- ✓ Kiểm tra token hết hạn
+- ✓ Extract token từ Authorization header
+- ✓ Kiểm tra claims (UserID, Username, ExpiresAt)
+
+#### Kết quả Test
+
+```bash
+# Kết quả mẫu khi chạy: go test ./test/auth/... -v
+=== RUN   TestRegisterSuccess
+--- PASS: TestRegisterSuccess (0.21s)
+=== RUN   TestLoginSuccess
+--- PASS: TestLoginSuccess (0.42s)
+=== RUN   TestHashPassword
+--- PASS: TestHashPassword (0.21s)
+=== RUN   TestGenerateJWT
+--- PASS: TestGenerateJWT (0.00s)
+...
+PASS
+ok      lab02_mahoa/test/auth   17.246s
+```
+
+**Tổng cộng:** 40+ test cases covering authentication system
+
+---
+
+### Test Thủ công (Manual Testing)
+
+Để kiểm tra các tính năng thủ công, bạn có thể:
 
 1. **Test Authentication:**
    ```bash
-   go run client/*.go register -u testuser -p password123
-   go run client/*.go login -u testuser -p password123
+   # Khởi động server
+   go run server/main.go
+   
+   # Khởi động client GUI
+   go run client/main.go
+   
+   # Thử đăng ký và đăng nhập
    ```
 
 2. **Test Encryption:**
-   ```bash
-   echo "Đây là nội dung bí mật" > test.txt
-   go run client/*.go upload -f test.txt
-   ```
+   - Tạo note mới trong GUI
+   - Kiểm tra dữ liệu trong database (storage/app.db) đã được mã hóa
 
-3. **Test Sharing:**
+3. **Test API với curl:**
    ```bash
-   go run client/*.go share -id 1 -time 60
-   # Chia sẻ URL với người khác
+   # Đăng ký
+   curl -X POST http://localhost:8080/api/auth/register \
+     -H "Content-Type: application/json" \
+     -d '{"username":"testuser","password":"password123"}'
+   
+   # Đăng nhập
+   curl -X POST http://localhost:8080/api/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"username":"testuser","password":"password123"}'
    ```
