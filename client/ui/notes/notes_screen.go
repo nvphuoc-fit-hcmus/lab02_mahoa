@@ -18,24 +18,36 @@ import (
 
 // Screen displays the notes page after login
 func Screen(window fyne.Window, apiClient *api.Client, username string, onLogout func()) {
-	// Gradient background
-	gradientBg := canvas.NewRectangle(color.RGBA{R: 99, G: 102, B: 241, A: 255})
+	// Modern gradient background (softer purple-blue)
+	gradientBg := canvas.NewRectangle(color.RGBA{R: 139, G: 92, B: 246, A: 255})
 
-	// Header section
-	headerTitle := canvas.NewText("📝 Secure Notes", color.White)
-	headerTitle.TextSize = 28
+	// Header card with rounded appearance
+	headerBg := canvas.NewRectangle(color.RGBA{R: 255, G: 255, B: 255, A: 250})
+	
+	headerTitle := canvas.NewText("🔐 Secure Notes", color.RGBA{R: 139, G: 92, B: 246, A: 255})
+	headerTitle.TextSize = 32
 	headerTitle.TextStyle = fyne.TextStyle{Bold: true}
 	headerTitle.Alignment = fyne.TextAlignCenter
 
-	userInfo := canvas.NewText("👤 "+username, color.RGBA{R: 255, G: 255, B: 255, A: 200})
+	subTitle := canvas.NewText("Your encrypted notes, protected by AES-256", color.RGBA{R: 107, G: 114, B: 128, A: 255})
+	subTitle.TextSize = 12
+	subTitle.Alignment = fyne.TextAlignCenter
+
+	userInfo := canvas.NewText("👤 "+username, color.RGBA{R: 59, G: 130, B: 246, A: 255})
 	userInfo.TextSize = 14
+	userInfo.TextStyle = fyne.TextStyle{Bold: true}
 	userInfo.Alignment = fyne.TextAlignCenter
 
-	header := container.NewVBox(
-		layout.NewSpacer(),
+	headerContent := container.NewVBox(
 		container.NewCenter(headerTitle),
+		container.NewCenter(subTitle),
+		widget.NewSeparator(),
 		container.NewCenter(userInfo),
-		layout.NewSpacer(),
+	)
+
+	header := container.NewMax(
+		headerBg,
+		container.NewPadded(headerContent),
 	)
 
 	// Status label for feedback
@@ -82,13 +94,18 @@ func Screen(window fyne.Window, apiClient *api.Client, username string, onLogout
 		notesScroll.Refresh()
 	}
 
-	// Upload section
-	uploadTitle := canvas.NewText("📤 Upload New Note", color.RGBA{R: 31, G: 41, B: 55, A: 255})
-	uploadTitle.TextSize = 16
+	// Upload section with card background
+	uploadCardBg := canvas.NewRectangle(color.RGBA{R: 255, G: 255, B: 255, A: 250})
+	
+	uploadTitle := canvas.NewText("📤 Upload New Note", color.RGBA{R: 139, G: 92, B: 246, A: 255})
+	uploadTitle.TextSize = 18
 	uploadTitle.TextStyle = fyne.TextStyle{Bold: true}
 
-	// File upload button
-	uploadBtn := widget.NewButton("Choose File & Upload", func() {
+	uploadDesc := widget.NewLabel("Select a file to encrypt and upload securely")
+	uploadDesc.TextStyle = fyne.TextStyle{Italic: true}
+
+	// File upload button with custom style
+	uploadBtn := widget.NewButton("📁 Choose File & Upload", func() {
 		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
 				statusLabel.SetText("❌ Error: " + err.Error())
@@ -142,13 +159,38 @@ func Screen(window fyne.Window, apiClient *api.Client, username string, onLogout
 			refreshNotes()
 		}, window)
 	})
+	uploadBtn.Importance = widget.HighImportance
 
-	uploadForm := container.NewVBox(
+	uploadContent := container.NewVBox(
 		uploadTitle,
+		uploadDesc,
 		uploadBtn,
 	)
 
-	// Action buttons
+	uploadForm := container.NewMax(
+		uploadCardBg,
+		container.NewPadded(uploadContent),
+	)
+
+	// Notes list section with card background
+	notesCardBg := canvas.NewRectangle(color.RGBA{R: 255, G: 255, B: 255, A: 250})
+	
+	notesTitle := canvas.NewText("📋 Your Notes Collection", color.RGBA{R: 139, G: 92, B: 246, A: 255})
+	notesTitle.TextSize = 18
+	notesTitle.TextStyle = fyne.TextStyle{Bold: true}
+
+	notesContent := container.NewVBox(
+		notesTitle,
+		widget.NewSeparator(),
+		notesScroll,
+	)
+
+	notesSection := container.NewMax(
+		notesCardBg,
+		container.NewPadded(notesContent),
+	)
+
+	// Action buttons with modern style
 	logoutBtn := widget.NewButton("🚪 Logout", func() {
 		apiClient.Token = ""
 		onLogout()
@@ -160,38 +202,39 @@ func Screen(window fyne.Window, apiClient *api.Client, username string, onLogout
 		logoutBtn,
 	)
 
-	// Notes list section
-	notesTitle := canvas.NewText("📋 Your Notes", color.RGBA{R: 31, G: 41, B: 55, A: 255})
-	notesTitle.TextSize = 16
-	notesTitle.TextStyle = fyne.TextStyle{Bold: true}
-
-	notesSection := container.NewVBox(
-		notesTitle,
-		notesScroll,
+	// Status bar with better styling
+	statusContainer := container.NewHBox(
+		widget.NewIcon(nil),
+		statusLabel,
+		layout.NewSpacer(),
 	)
 
-	// Main content
+	// Main content with better spacing
 	mainContent := container.NewVBox(
 		header,
-		layout.NewSpacer(),
+		widget.NewLabel(""), // Spacer
 		uploadForm,
-		layout.NewSpacer(),
+		widget.NewLabel(""), // Spacer
 		notesSection,
-		layout.NewSpacer(),
-		statusLabel,
+		widget.NewLabel(""), // Spacer
+		statusContainer,
 		actionBar,
 	)
 
 	// Scrollable main content
 	scrollContent := container.NewScroll(mainContent)
+	scrollContent.SetMinSize(fyne.NewSize(850, 600))
 
-	// Final layout
+	// Final layout with padding
 	content := container.NewMax(
 		gradientBg,
-		container.NewPadded(scrollContent),
+		container.NewPadded(
+			container.NewPadded(scrollContent),
+		),
 	)
 
 	window.SetContent(content)
+	window.Resize(fyne.NewSize(900, 700))
 
 	// Load notes on screen open
 	refreshNotes()
@@ -199,111 +242,143 @@ func Screen(window fyne.Window, apiClient *api.Client, username string, onLogout
 
 // createNoteCard creates a card widget for a single note
 func createNoteCard(note api.Note, apiClient *api.Client, window fyne.Window, onRefresh func()) fyne.CanvasObject {
-	// Card background
-	cardBg := canvas.NewRectangle(color.White)
+	// Card background with shadow effect (lighter background)
+	cardBg := canvas.NewRectangle(color.RGBA{R: 249, G: 250, B: 251, A: 255})
 
-	// Note title with share status icon
-	titleText := canvas.NewText(note.Title, color.RGBA{R: 31, G: 41, B: 55, A: 255})
-	titleText.TextSize = 14
+	// Note icon based on share status
+	var noteIcon string
+	if note.IsShared {
+		noteIcon = "🌐"
+	} else {
+		noteIcon = "📄"
+	}
+
+	// Note title with icon
+	titleText := canvas.NewText(noteIcon+" "+note.Title, color.RGBA{R: 31, G: 41, B: 55, A: 255})
+	titleText.TextSize = 16
 	titleText.TextStyle = fyne.TextStyle{Bold: true}
 
-	// Share status icon
-	var shareStatusIcon string
-	var shareStatusColor color.Color
+	// Share status badge with better styling
+	var shareStatusText string
+	var shareStatusBg color.Color
+	var shareStatusFg color.Color
 	if note.IsShared {
-		shareStatusIcon = "🌐 Shared"
-		shareStatusColor = color.RGBA{R: 34, G: 197, B: 94, A: 255} // Green
+		shareStatusText = " SHARED "
+		shareStatusBg = color.RGBA{R: 34, G: 197, B: 94, A: 255} // Green
+		shareStatusFg = color.White
 	} else {
-		shareStatusIcon = "🔒 Private"
-		shareStatusColor = color.RGBA{R: 107, G: 114, B: 128, A: 255} // Gray
+		shareStatusText = " PRIVATE "
+		shareStatusBg = color.RGBA{R: 156, G: 163, B: 175, A: 255} // Gray
+		shareStatusFg = color.White
 	}
 
-	shareStatus := canvas.NewText(shareStatusIcon, shareStatusColor)
-	shareStatus.TextSize = 12
-	shareStatus.TextStyle = fyne.TextStyle{Bold: true}
+	statusBadgeBg := canvas.NewRectangle(shareStatusBg)
+	statusBadgeText := canvas.NewText(shareStatusText, shareStatusFg)
+	statusBadgeText.TextSize = 10
+	statusBadgeText.TextStyle = fyne.TextStyle{Bold: true}
+	statusBadge := container.NewMax(
+		statusBadgeBg,
+		container.NewCenter(statusBadgeText),
+	)
+	statusBadge.Resize(fyne.NewSize(80, 20))
 
-	titleContainer := container.NewHBox(
+	titleContainer := container.NewBorder(
+		nil, nil, nil, statusBadge,
 		titleText,
-		layout.NewSpacer(),
-		shareStatus,
 	)
 
-	// Note info
-	sizeText := canvas.NewText(fmt.Sprintf("Size: %d bytes", len(note.EncryptedContent)), color.RGBA{R: 107, G: 114, B: 128, A: 255})
-	sizeText.TextSize = 12
+	// Note info with icons
+	sizeText := canvas.NewText("💾 "+fmt.Sprintf("%d bytes", len(note.EncryptedContent)), color.RGBA{R: 107, G: 114, B: 128, A: 255})
+	sizeText.TextSize = 11
 
-	createdText := canvas.NewText(fmt.Sprintf("Created: %s", note.CreatedAt.Format("2006-01-02 15:04")), color.RGBA{R: 107, G: 114, B: 128, A: 255})
-	createdText.TextSize = 12
+	createdText := canvas.NewText("🕒 "+note.CreatedAt.Format("Jan 02, 2006 15:04"), color.RGBA{R: 107, G: 114, B: 128, A: 255})
+	createdText.TextSize = 11
 
-	// Delete button
-	deleteBtn := widget.NewButton("🗑️ Delete", func() {
-		dialog.ShowConfirm("Delete Note", "Are you sure you want to delete this note?", func(confirmed bool) {
-			if confirmed {
-				if err := apiClient.DeleteNote(note.ID); err != nil {
-					dialog.ShowError(fmt.Errorf("delete failed: %w", err), window)
-					return
-				}
-				dialog.ShowInformation("Success", "Note deleted successfully", window)
-				onRefresh()
-			}
-		}, window)
-	})
-	deleteBtn.Importance = widget.DangerImportance
-
-	// Revoke button (only show if shared)
-	var revokeBtn *widget.Button
-	if note.IsShared {
-		revokeBtn = widget.NewButton("🔐 Revoke Share", func() {
-			if err := apiClient.RevokeShare(note.ID); err != nil {
-				dialog.ShowError(fmt.Errorf("revoke failed: %w", err), window)
-				return
-			}
-			dialog.ShowInformation("Success", "Sharing revoked successfully", window)
-			onRefresh()
-		})
-	} else {
-		revokeBtn = widget.NewButton("🔐 Revoke Share", func() {})
-		revokeBtn.Disable() // Disable if not shared
-	}
+	infoContainer := container.NewHBox(
+		sizeText,
+		widget.NewLabel("  •  "),
+		createdText,
+	)
 
 	// Share button (to create share link)
-	shareBtn := widget.NewButton("🌐 Share", func() {
+	shareBtn := widget.NewButton("🔗 Share", func() {
 		if shareToken, err := apiClient.CreateShare(note.ID, 24); err != nil {
 			dialog.ShowError(fmt.Errorf("share failed: %w", err), window)
 		} else {
 			shareURL := fmt.Sprintf("http://localhost:8080/share/%s", shareToken)
-			dialog.ShowInformation("Share Link Created", "Share URL:\n"+shareURL+"\n\nValid for 24 hours", window)
+			dialog.ShowInformation("✅ Share Link Created", 
+				fmt.Sprintf("Share URL:\n\n%s\n\n⏰ Valid for 24 hours\n🔒 Encrypted end-to-end", shareURL), 
+				window)
 			onRefresh()
 		}
 	})
+	shareBtn.Importance = widget.HighImportance
 
-	// Button container
+	// Revoke button (only enabled if shared)
+	revokeBtn := widget.NewButton("🚫 Revoke", func() {
+		if err := apiClient.RevokeShare(note.ID); err != nil {
+			dialog.ShowError(fmt.Errorf("revoke failed: %w", err), window)
+			return
+		}
+		dialog.ShowInformation("✅ Success", "Sharing revoked successfully", window)
+		onRefresh()
+	})
+	if !note.IsShared {
+		revokeBtn.Disable()
+	}
+
+	// Delete button
+	deleteBtn := widget.NewButton("🗑️ Delete", func() {
+		dialog.ShowConfirm("⚠️ Delete Note", 
+			fmt.Sprintf("Are you sure you want to permanently delete:\n\n'%s'\n\nThis action cannot be undone!", note.Title),
+			func(confirmed bool) {
+				if confirmed {
+					if err := apiClient.DeleteNote(note.ID); err != nil {
+						dialog.ShowError(fmt.Errorf("delete failed: %w", err), window)
+						return
+					}
+					dialog.ShowInformation("✅ Success", "Note deleted successfully", window)
+					onRefresh()
+				}
+			}, window)
+	})
+	deleteBtn.Importance = widget.DangerImportance
+
+	// Button container with better spacing
 	buttonContainer := container.NewHBox(
-		deleteBtn,
 		shareBtn,
 		revokeBtn,
 		layout.NewSpacer(),
+		deleteBtn,
 	)
 
-	// Note content
+	// Separator line
+	separator := widget.NewSeparator()
+
+	// Note content with better layout
 	noteInfo := container.NewVBox(
 		titleContainer,
-		sizeText,
-		createdText,
+		widget.NewLabel(""), // Small spacer
+		infoContainer,
+		separator,
 		buttonContainer,
 	)
 
-	// Card container
+	// Card container with shadow effect
+	shadowBg := canvas.NewRectangle(color.RGBA{R: 0, G: 0, B: 0, A: 10})
+	
 	card := container.NewMax(
 		cardBg,
-		container.NewPadded(noteInfo),
+		container.NewPadded(
+			container.NewPadded(noteInfo),
+		),
 	)
 
-	// Add border effect by wrapping in a box
-	border := container.NewBorder(
-		nil, nil, nil, nil,
+	// Add shadow effect
+	cardWithShadow := container.NewStack(
+		container.NewPadded(shadowBg),
 		card,
 	)
 
-	return border
+	return cardWithShadow
 }

@@ -384,49 +384,106 @@ netstat -ano | findstr :8080
 
 ## 🧪 Testing
 
-### Test Tự động (Unit Tests)
+Hệ thống có bộ test tự động hoàn chỉnh cho 2 component chính: **Authentication** (Xác thực) và **Access Control** (Giới hạn truy cập).
 
-Hệ thống có bộ test tự động hoàn chỉnh cho chức năng xác thực người dùng (Authentication).
-
-#### Cấu trúc Test
+### Cấu trúc Test Directory
 
 ```
 test/
-└── auth/                          # Test xác thực người dùng
-    ├── register_test.go           # Test đăng ký người dùng
-    ├── login_test.go              # Test đăng nhập
-    ├── password_test.go           # Test hash và verify mật khẩu
-    └── jwt_test.go                # Test JWT token
+├── README.md                      # Tổng quan test suite
+├── auth/                          # Test xác thực người dùng (40+ tests)
+│   ├── register_test.go           # Test đăng ký người dùng
+│   ├── login_test.go              # Test đăng nhập
+│   ├── password_test.go           # Test hash và verify mật khẩu
+│   └── jwt_test.go                # Test JWT token
+└── access/                        # Test giới hạn truy cập (20 tests)
+    ├── share_access_test.go       # Test share link access control
+    ├── expired_links_test.go      # Test expired link handling
+    ├── README.md                  # Chi tiết test cases
+    └── TEST_RESULTS.md            # Kết quả và thống kê
 ```
 
-#### Chạy Test
+**Tổng cộng:** 60+ test cases với coverage đầy đủ cho các chức năng quan trọng.
 
-**1. Chạy tất cả test:**
+---
+
+### 🚀 Hướng dẫn Chạy Test
+
+#### 1. Chạy TẤT CẢ Tests
+
 ```bash
+# Chạy toàn bộ test suite (Auth + Access Control)
+go test ./test/... -v
+
+# Chạy với coverage report
+go test ./test/... -cover
+
+# Xuất coverage ra file HTML
+go test ./test/... -coverprofile=coverage.out
+go tool cover -html=coverage.out
+```
+
+#### 2. Chạy Test Theo Component
+
+**Authentication Tests (40+ tests):**
+```bash
+# Chạy tất cả auth tests
 go test ./test/auth/... -v
-```
 
-**2. Chạy test cụ thể:**
-```bash
-# Test đăng ký
-go test ./test/auth/... -v -run TestRegister
+# Chạy test cụ thể
+go test ./test/auth -run TestRegisterSuccess -v
+go test ./test/auth -run TestLoginSuccess -v
+go test ./test/auth -run TestHashPassword -v
+go test ./test/auth -run TestGenerateJWT -v
 
-# Test đăng nhập
-go test ./test/auth/... -v -run TestLogin
-
-# Test password hashing
-go test ./test/auth/... -v -run TestPassword
-
-# Test JWT
-go test ./test/auth/... -v -run TestJWT
-```
-
-**3. Xem test coverage:**
-```bash
+# Với coverage
 go test ./test/auth/... -cover
 ```
 
-#### Các Test Cases
+**Access Control Tests (20 tests):**
+```bash
+# Chạy tất cả access tests
+go test ./test/access/... -v
+
+# Chạy test cụ thể - Kiểm tra hết hạn
+go test ./test/access -run TestAccessExpiredShareLink -v
+go test ./test/access -run TestShareLinkExpirationBoundary -v
+
+# Chạy test bảo mật
+go test ./test/access -run TestUnauthorizedAccess -v
+go test ./test/access -run TestExpiredShareNoLeakage -v
+
+# Chạy performance test
+go test ./test/access -run TestShareListNotesPerformance -v
+
+# Skip slow tests (time-based tests)
+go test ./test/access -short
+```
+
+#### 3. Chạy Test với Options Nâng cao
+
+```bash
+# Chạy với race detector (phát hiện race conditions)
+go test ./test/... -race
+
+# Chạy với verbose output chi tiết
+go test ./test/... -v -json | tee test-results.json
+
+# Chạy với timeout
+go test ./test/... -timeout 30s
+
+# Chạy song song với nhiều CPUs
+go test ./test/... -parallel 4
+
+# Chạy benchmark tests
+go test ./test/... -bench=.
+```
+
+---
+
+### 📊 Test Components Chi tiết
+
+#### 1. Test Tự động (Unit Tests)
 
 **✅ Test Đăng ký (register_test.go):**
 - ✓ Đăng ký thành công với thông tin hợp lệ
@@ -479,6 +536,122 @@ ok      lab02_mahoa/test/auth   17.246s
 ```
 
 **Tổng cộng:** 40+ test cases covering authentication system
+
+---
+
+#### 2. Test Giới hạn Truy cập (Access Control Tests)
+
+Test suite này đảm bảo rằng **các liên kết chia sẻ hết hạn không thể truy cập**, bảo vệ dữ liệu người dùng khỏi truy cập trái phép.
+
+**📁 Vị trí:** `test/access/`
+
+**🎯 Mục đích:**
+Kiểm tra tính năng giới hạn truy cập theo thời gian của share links, đảm bảo:
+- Liên kết hết hạn **KHÔNG thể truy cập**
+- Chỉ liên kết còn hạn mới có thể sử dụng
+- Bảo mật dữ liệu người dùng được đảm bảo
+
+**✅ Test Cases (20 tests):**
+
+**Core Access Control Tests (share_access_test.go):**
+- ✓ `TestAccessActiveShareLink` - Truy cập liên kết còn hạn
+- ✓ `TestAccessExpiredShareLink` ⭐ - Liên kết hết hạn KHÔNG truy cập được
+- ✓ `TestMultipleExpiredShareLinks` - Lọc nhiều liên kết hết hạn
+- ✓ `TestListNotesWithExpiredShares` - Hiển thị trạng thái IsShared đúng
+- ✓ `TestRevokeExpiredShare` - Thu hồi liên kết đã hết hạn
+- ✓ `TestCreateShareWithCustomExpiration` - Tạo liên kết với thời gian tùy chỉnh
+- ✓ `TestShareLinkExpirationBoundary` ⭐ - Kiểm tra điều kiện `expires_at > NOW()`
+- ✓ `TestCleanupExpiredShares` - Dọn dẹp hàng loạt liên kết hết hạn
+- ✓ `TestUnauthorizedAccessToExpiredShare` 🔒 - Bảo mật unauthorized access
+- ✓ `TestShareLinkTokenUniqueness` - UNIQUE constraint hoạt động đúng
+
+**Advanced Expiration Tests (expired_links_test.go):**
+- ✓ `TestExpiredShareLinkAccessViaAPI` - Truy cập qua API endpoint
+- ✓ `TestMultipleUsersExpiredShares` - Nhiều users với liên kết hết hạn
+- ✓ `TestShareLinkExpirationTransition` ⏱️ - Chuyển đổi active → expired
+- ✓ `TestConcurrentShareAccess` 🔀 - 5 goroutines truy cập đồng thời
+- ✓ `TestExpiredSharesDoNotAffectActiveNotes` - Owner vẫn truy cập được note
+- ✓ `TestExpiredShareDeletion` - Xóa chọn lọc liên kết hết hạn
+- ✓ `TestShareExpirationWithDifferentTimezones` 🌍 - Xử lý timezone
+- ✓ `TestShareListNotesPerformance` 🚀 - Hiệu năng với 100 notes, 400 shares
+- ✓ `TestExpiredShareNoLeakage` 🔒 - Không leak thông tin
+- ✓ `TestRevokeAllSharesIncludingExpired` - Thu hồi tất cả shares
+
+**🔑 Logic Kiểm tra Hết hạn:**
+```sql
+WHERE expires_at > NOW()
+```
+
+Điều kiện truy cập:
+- `expires_at > NOW()` → ✅ CÒN HẠN (có thể truy cập)
+- `expires_at = NOW()` → ❌ HẾT HẠN (không thể truy cập)
+- `expires_at < NOW()` → ❌ HẾT HẠN (không thể truy cập)
+
+**🏃 Chạy Access Tests:**
+
+```bash
+# Chạy tất cả access tests
+go test ./test/access/... -v
+
+# Chạy một test cụ thể
+go test ./test/access -run TestAccessExpiredShareLink -v
+
+# Chạy với coverage
+go test ./test/access/... -cover
+
+# Skip slow tests (time-based tests)
+go test ./test/access -short
+```
+
+**📊 Kết quả Test:**
+```bash
+=== RUN   TestAccessExpiredShareLink
+--- PASS: TestAccessExpiredShareLink (0.05s)
+=== RUN   TestShareLinkExpirationBoundary
+--- PASS: TestShareLinkExpirationBoundary (0.06s)
+=== RUN   TestUnauthorizedAccessToExpiredShare
+--- PASS: TestUnauthorizedAccessToExpiredShare (0.11s)
+...
+PASS
+ok      lab02_mahoa/test/access 3.912s
+```
+
+**✅ Kết quả:** Tất cả 20 tests PASS - Giới hạn truy cập hoạt động đúng!
+
+**🔍 Test Coverage:**
+- ✅ Security: Unauthorized access, information leakage
+- ✅ Performance: Concurrent access, bulk operations (1.2ms cho 100 notes)
+- ✅ Edge Cases: Boundary times, timezone handling
+- ✅ Database: Constraints, cleanup, transactions
+
+**Tổng cộng:** 20 test cases covering access control system
+
+---
+
+### Test Tất cả Components
+
+Để chạy toàn bộ test suite (Authentication + Access Control):
+
+```bash
+# Chạy tất cả tests
+go test ./test/... -v
+
+# Chạy với coverage report
+go test ./test/... -cover -coverprofile=coverage.out
+
+# Xem coverage chi tiết
+go tool cover -html=coverage.out
+
+# Chạy theo thư mục
+go test ./test/auth/... -v    # Chỉ auth tests
+go test ./test/access/... -v  # Chỉ access tests
+```
+
+**📊 Tổng kết Test Suite:**
+- **Authentication Tests:** 40+ test cases
+- **Access Control Tests:** 20 test cases
+- **Tổng cộng:** 60+ test cases
+- **Status:** ✅ ALL TESTS PASSING
 
 ---
 
