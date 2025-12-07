@@ -39,42 +39,49 @@ Dựa trên yêu cầu của bài tập Lab02, ứng dụng bao gồm các tính
 Dự án được tổ chức theo cấu trúc phân tách rõ ràng giữa Client và Server:
 
 ```
-lab02_mahoa/
-├── client/              # Mã nguồn Client - Desktop GUI App
-│   ├── main.go          # Entry point - Khởi động Fyne GUI
-│   ├── ui/              # Module giao diện người dùng
-│   │   ├── gui.go       # GUI coordinator
-│   │   ├── login/       # Module màn hình đăng nhập/đăng ký
+project_02_source/
+├── client/                      # Mã nguồn Client - Desktop GUI App
+│   ├── main.go                  # Entry point - Khởi động Fyne GUI
+│   ├── ui/                      # Module giao diện người dùng
+│   │   ├── gui.go               # GUI coordinator
+│   │   ├── login/               # Module màn hình đăng nhập/đăng ký
 │   │   │   └── login_screen.go
-│   │   └── notes/       # Module màn hình notes
+│   │   └── notes/               # Module màn hình notes
 │   │       └── notes_screen.go
-│   ├── api/             # Module HTTP client
-│   │   └── client.go    # API client gọi backend
-│   └── crypto/          # Module mã hóa
-│       └── encryption.go # AES-256-GCM encryption
-├── server/              # Mã nguồn Backend - RESTful API
-│   ├── main.go          # API server entry point
-│   ├── auth/            # Module xác thực
-│   │   ├── jwt.go       # JWT token generation & validation
-│   │   └── password.go  # Bcrypt password hashing
-│   ├── database/        # Module database
-│   │   └── database.go  # SQLite connection & migration
-│   ├── handlers/        # Module xử lý HTTP requests
-│   │   ├── auth_handler.go # Login/Register handlers
-│   │   ├── note_handler.go # CRUD operations cho notes
-│   │   └── utils.go        # JSON response helpers
-│   └── models/          # Module data models
-│       ├── user.go      # User model
-│       ├── note.go      # Note & SharedLink models
-│       └── requests.go  # Request/Response structs
-├── storage/             # Thư mục chứa Database (auto-generated)
-│   └── app.db           # SQLite database file
-├── go.mod               # Quản lý thư viện Go
-├── go.sum               # Checksum các thư viện
-├── start.bat            # Script tự động khởi động (Windows)
-├── start.sh             # Script tự động khởi động (Linux/Mac/Git Bash)
-├── build.bat            # Script build executable
-└── README.md            # Tài liệu hướng dẫn này
+│   ├── api/                     # Module HTTP client
+│   │   └── client.go            # API client gọi backend
+│   ├── crypto/                  # Module mã hóa
+│   │   └── encryption.go        # AES-256-GCM encryption
+│   ├── cli/                     # Module CLI (command-line interface)
+│   │   └── cli.go               # CLI commands handler
+│   └── secure-notes.exe         # Compiled client executable (sau khi build)
+├── server/                      # Mã nguồn Backend - RESTful API
+│   ├── main.go                  # API server entry point
+│   ├── auth/                    # Module xác thực
+│   │   ├── jwt.go               # JWT token generation & validation
+│   │   └── password.go          # Bcrypt password hashing
+│   ├── database/                # Module database
+│   │   └── database.go          # SQLite connection & migration
+│   ├── handlers/                # Module xử lý HTTP requests
+│   │   ├── auth_handler.go      # Login/Register handlers
+│   │   ├── note_handler.go      # CRUD operations cho notes
+│   │   └── utils.go             # JSON response helpers
+│   ├── models/                  # Module data models
+│   │   ├── user.go              # User model
+│   │   ├── note.go              # Note & SharedLink models
+│   │   └── requests.go          # Request/Response structs
+│   ├── storage/                 # Database của server (auto-generated)
+│   │   └── app.db               # SQLite database file
+│   └── server.exe               # Compiled server executable (sau khi build)
+├── storage/                     # Thư mục database chung (auto-generated)
+│   └── app.db                   # SQLite database file
+├── go.mod                       # Quản lý thư viện Go
+├── go.sum                       # Checksum các thư viện
+├── start.bat                    # Script tự động khởi động (Windows)
+├── start.sh                     # Script tự động khởi động (Linux/Mac/Git Bash)
+├── build.bat                    # Script build executable (Windows)
+├── SRS.md                       # Software Requirements Specification
+└── README.md                    # Tài liệu hướng dẫn này
 ```
 
 ---
@@ -153,38 +160,72 @@ go mod tidy
 
 Lệnh này sẽ tự động đọc file `go.mod` và tải các dependencies về máy.
 
-### 3. Khởi chạy Server và CLient
+### 3. Khởi chạy Server và Client
 
-**Cách 1: Sử dụng script tự động (Đơn giản nhất)**
+#### Cách 1: Sử dụng script tự động (Đơn giản nhất - Khuyến nghị)
 
--Chạy `./start.sh` trong Git Bash 
-
-**Cách 2: Chạy thủ công**
-
-Mở Terminal đầu tiên và chạy Server:
-
+**Git Bash:**
 ```bash
-cd c:\Users\Admin\lab02_mahoa
-go run server/main.go server/auth.go server/db.go server/handlers.go server/models.go
+./start.sh
 ```
 
-**Cách 3: Build thành exe rồi chạy**
+Script sẽ tự động:
+- Khởi động Server trước (port 8080)
+- Đợi 2 giây
+- Khởi động Client GUI
 
+#### Cách 2: Chạy thủ công từng thành phần
+
+**Terminal 1 - Chạy Server:**
 ```bash
-# Build
-cd server
-go build -o server.exe
-
-# Chạy
-./server.exe
+# Từ thư mục project_02_source
+go run server/main.go
 ```
 
-**Kết quả:** Bạn sẽ thấy thông báo:
+**Kết quả:** Server sẽ chạy trên `http://localhost:8080`
 ```
 🚀 RESTful API Server is running on http://localhost:8080
 ```
 
-Giữ Terminal này mở để Server tiếp tục chạy.
+**Terminal 2 - Chạy Client GUI:**
+```bash
+# Từ thư mục project_02_source
+go run client/main.go
+```
+
+Ứng dụng desktop sẽ mở ra với màn hình đăng nhập.
+
+#### Cách 3: Build thành file exe rồi chạy
+
+**Build cả 2 components:**
+```cmd
+# Windows
+build.bat
+
+# Hoặc thủ công
+cd server
+go build -o server.exe
+cd ..
+
+cd client
+go build -o secure-notes.exe
+cd ..
+```
+
+**Chạy file exe:**
+```cmd
+# Terminal 1 - Chạy Server
+cd server
+server.exe
+
+# Terminal 2 - Chạy Client
+cd client
+secure-notes.exe
+```
+
+**Lưu ý:** Sau khi build, các file exe sẽ được tạo:
+- `server/server.exe` - Backend API server
+- `client/secure-notes.exe` - Desktop GUI application
 
 ---
 
@@ -386,97 +427,109 @@ netstat -ano | findstr :8080
 
 Hệ thống có bộ test tự động hoàn chỉnh cho 2 component chính: **Authentication** (Xác thực) và **Access Control** (Giới hạn truy cập).
 
-### Cấu trúc Test Directory
+### ⚠️ Vị trí Test Files
+
+**Lưu ý quan trọng:** Test files được tách riêng ra thư mục `../project_02_test/` để dễ quản lý và không ảnh hưởng đến source code chính.
 
 ```
-test/
-├── README.md                      # Tổng quan test suite
-├── auth/                          # Test xác thực người dùng (40+ tests)
+project_02_test/                   # Thư mục test riêng biệt
+├── go.mod                         # Module config (link đến source)
+├── auth/                          # Test xác thực người dùng (44 tests)
 │   ├── register_test.go           # Test đăng ký người dùng
 │   ├── login_test.go              # Test đăng nhập
 │   ├── password_test.go           # Test hash và verify mật khẩu
 │   └── jwt_test.go                # Test JWT token
 └── access/                        # Test giới hạn truy cập (20 tests)
     ├── share_access_test.go       # Test share link access control
-    ├── expired_links_test.go      # Test expired link handling
-    ├── README.md                  # Chi tiết test cases
-    └── TEST_RESULTS.md            # Kết quả và thống kê
+    └── expired_links_test.go      # Test expired link handling
 ```
 
-**Tổng cộng:** 60+ test cases với coverage đầy đủ cho các chức năng quan trọng.
+**Tổng cộng:** 64 test cases với coverage đầy đủ cho các chức năng quan trọng.
 
 ---
 
 ### 🚀 Hướng dẫn Chạy Test
 
+**Lưu ý:** Test files nằm trong thư mục `../project_02_test/`, không phải trong source code. 
+Để chạy test, bạn cần di chuyển đến thư mục test:
+
 #### 1. Chạy TẤT CẢ Tests
 
 ```bash
+# Di chuyển đến thư mục test
+cd ../project_02_test
+
 # Chạy toàn bộ test suite (Auth + Access Control)
-go test ./test/... -v
+go test ./... -v
 
 # Chạy với coverage report
-go test ./test/... -cover
+go test ./... -cover
 
 # Xuất coverage ra file HTML
-go test ./test/... -coverprofile=coverage.out
+go test ./... -coverprofile=coverage.out
 go tool cover -html=coverage.out
 ```
 
 #### 2. Chạy Test Theo Component
 
-**Authentication Tests (40+ tests):**
+**Authentication Tests (44 tests):**
 ```bash
+# Di chuyển đến thư mục test (nếu chưa)
+cd ../project_02_test
+
 # Chạy tất cả auth tests
-go test ./test/auth/... -v
+go test ./auth -v
 
 # Chạy test cụ thể
-go test ./test/auth -run TestRegisterSuccess -v
-go test ./test/auth -run TestLoginSuccess -v
-go test ./test/auth -run TestHashPassword -v
-go test ./test/auth -run TestGenerateJWT -v
+go test ./auth -run TestRegisterSuccess -v
+go test ./auth -run TestLoginSuccess -v
+go test ./auth -run TestHashPassword -v
+go test ./auth -run TestGenerateJWT -v
 
 # Với coverage
-go test ./test/auth/... -cover
+go test ./auth -cover
 ```
 
 **Access Control Tests (20 tests):**
 ```bash
 # Chạy tất cả access tests
-go test ./test/access/... -v
+go test ./access -v
 
 # Chạy test cụ thể - Kiểm tra hết hạn
-go test ./test/access -run TestAccessExpiredShareLink -v
-go test ./test/access -run TestShareLinkExpirationBoundary -v
+go test ./access -run TestAccessExpiredShareLink -v
+go test ./access -run TestShareLinkExpirationBoundary -v
 
 # Chạy test bảo mật
-go test ./test/access -run TestUnauthorizedAccess -v
-go test ./test/access -run TestExpiredShareNoLeakage -v
+go test ./access -run TestUnauthorizedAccess -v
+go test ./access -run TestExpiredShareNoLeakage -v
 
 # Chạy performance test
-go test ./test/access -run TestShareListNotesPerformance -v
+go test ./access -run TestShareListNotesPerformance -v
 
 # Skip slow tests (time-based tests)
-go test ./test/access -short
+go test ./access -short
 ```
 
 #### 3. Chạy Test với Options Nâng cao
 
 ```bash
+# Di chuyển đến thư mục test
+cd ../project_02_test
+
 # Chạy với race detector (phát hiện race conditions)
-go test ./test/... -race
+go test ./... -race
 
 # Chạy với verbose output chi tiết
-go test ./test/... -v -json | tee test-results.json
+go test ./... -v -json | tee test-results.json
 
 # Chạy với timeout
-go test ./test/... -timeout 30s
+go test ./... -timeout 30s
 
 # Chạy song song với nhiều CPUs
-go test ./test/... -parallel 4
+go test ./... -parallel 4
 
 # Chạy benchmark tests
-go test ./test/... -bench=.
+go test ./... -bench=.
 ```
 
 ---
@@ -521,7 +574,7 @@ go test ./test/... -bench=.
 #### Kết quả Test
 
 ```bash
-# Kết quả mẫu khi chạy: go test ./test/auth/... -v
+# Kết quả mẫu khi chạy: cd ../project_02_test && go test ./auth -v
 === RUN   TestRegisterSuccess
 --- PASS: TestRegisterSuccess (0.21s)
 === RUN   TestLoginSuccess
@@ -532,10 +585,10 @@ go test ./test/... -bench=.
 --- PASS: TestGenerateJWT (0.00s)
 ...
 PASS
-ok      lab02_mahoa/test/auth   17.246s
+ok      project_02_test/auth   17.452s
 ```
 
-**Tổng cộng:** 40+ test cases covering authentication system
+**Tổng cộng:** 44 test cases covering authentication system
 
 ---
 
@@ -590,17 +643,20 @@ WHERE expires_at > NOW()
 **🏃 Chạy Access Tests:**
 
 ```bash
+# Di chuyển đến thư mục test
+cd ../project_02_test
+
 # Chạy tất cả access tests
-go test ./test/access/... -v
+go test ./access -v
 
 # Chạy một test cụ thể
-go test ./test/access -run TestAccessExpiredShareLink -v
+go test ./access -run TestAccessExpiredShareLink -v
 
 # Chạy với coverage
-go test ./test/access/... -cover
+go test ./access -cover
 
 # Skip slow tests (time-based tests)
-go test ./test/access -short
+go test ./access -short
 ```
 
 **📊 Kết quả Test:**
@@ -613,7 +669,7 @@ go test ./test/access -short
 --- PASS: TestUnauthorizedAccessToExpiredShare (0.11s)
 ...
 PASS
-ok      lab02_mahoa/test/access 3.912s
+ok      project_02_test/access 4.547s
 ```
 
 **✅ Kết quả:** Tất cả 20 tests PASS - Giới hạn truy cập hoạt động đúng!
@@ -633,24 +689,27 @@ ok      lab02_mahoa/test/access 3.912s
 Để chạy toàn bộ test suite (Authentication + Access Control):
 
 ```bash
+# Di chuyển đến thư mục test
+cd ../project_02_test
+
 # Chạy tất cả tests
-go test ./test/... -v
+go test ./... -v
 
 # Chạy với coverage report
-go test ./test/... -cover -coverprofile=coverage.out
+go test ./... -cover -coverprofile=coverage.out
 
 # Xem coverage chi tiết
 go tool cover -html=coverage.out
 
 # Chạy theo thư mục
-go test ./test/auth/... -v    # Chỉ auth tests
-go test ./test/access/... -v  # Chỉ access tests
+go test ./auth -v    # Chỉ auth tests
+go test ./access -v  # Chỉ access tests
 ```
 
 **📊 Tổng kết Test Suite:**
-- **Authentication Tests:** 40+ test cases
+- **Authentication Tests:** 44 test cases
 - **Access Control Tests:** 20 test cases
-- **Tổng cộng:** 60+ test cases
+- **Tổng cộng:** 64 test cases
 - **Status:** ✅ ALL TESTS PASSING
 
 ---
