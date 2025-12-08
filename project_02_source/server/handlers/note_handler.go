@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"lab02_mahoa/server/auth"
@@ -321,6 +323,19 @@ func CreateShareHandler(w http.ResponseWriter, r *http.Request) {
 		req.DurationHours = 24 // Default 24 hours
 	}
 
+	// Calculate expiration duration
+	var duration time.Duration
+	if req.DurationMinutes > 0 {
+		// Use minutes if specified (for testing)
+		duration = time.Minute * time.Duration(req.DurationMinutes)
+	} else if req.DurationHours > 0 {
+		// Use hours if specified
+		duration = time.Hour * time.Duration(req.DurationHours)
+	} else {
+		// Default 24 hours
+		duration = time.Hour * 24
+	}
+
 	db := database.GetDB()
 
 	// Verify note belongs to user
@@ -336,14 +351,19 @@ func CreateShareHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate share token
-	shareToken := fmt.Sprintf("share_%d_%d", noteID, time.Now().Unix())
+	shareToken, err := generateSecureToken(32)
+	if err != nil {
+		log.Printf("Error generating share token: %v", err)
+		RespondWithError(w, http.StatusInternalServerError, "Failed to generate share token")
+		return
+	}
 
 	// Create share link
 	shareLink := models.SharedLink{
 		NoteID:     uint(noteID),
 		UserID:     claims.UserID,
 		ShareToken: shareToken,
-		ExpiresAt:  time.Now().Add(time.Hour * time.Duration(req.DurationHours)),
+		ExpiresAt:  time.Now().Add(duration),
 	}
 
 	if err := db.Create(&shareLink).Error; err != nil {
@@ -352,10 +372,85 @@ func CreateShareHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	RespondWithJSON(w, http.StatusCreated, map[string]interface{}{
-		"success":     true,
-		"share_token": shareToken,
-		"expires_at":  shareLink.ExpiresAt,
-		"message":     "Share link created successfully",
+	log.Printf("✅ Share link created: token=%s, expires_at=%v, duration=%v", 
+		shareToken[:10]+"...", shareLink.ExpiresAt, duration)
+
+	// Create share URL (the encryption key should be added by client in fragment)
+	shareURL := fmt.Sprintf("http://localhost:8080/share/%s", shareToken)
+
+	RespondWithJSON(w, http.StatusCreated, models.ShareLinkResponse{
+		Success:    true,
+		ShareToken: shareToken,
+		ShareURL:   shareURL,
+		ExpiresAt:  shareLink.ExpiresAt,
+		Message:    "Share link created successfully",
 	})
+}
+
+// GetSharedNoteHandler retrieves a note via share token with time validation
+func GetSharedNoteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Extract share token from URL path: /api/shares/:token
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/shares/"), "/")
+	if len(pathParts) == 0 || pathParts[0] == "" {
+		RespondWithError(w, http.StatusBadRequest, "Share token is required")
+		return
+	}
+
+	shareToken := pathParts[0]
+
+	db := database.GetDB()
+
+	// Find share link
+	var shareLink models.SharedLink
+	if err := db.Preload("Note").Preload("User").Where("share_token = ?", shareToken).First(&shareLink).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			RespondWithError(w, http.StatusNotFound, "Share link not found")
+			return
+		}
+		log.Printf("Error fetching share link: %v", err)
+		RespondWithError(w, http.StatusInternalServerError, "Failed to fetch share link")
+		return
+	}
+
+	// Check if link has expired
+	now := time.Now()
+	log.Printf("🔍 Checking expiry: now=%v, expires_at=%v, expired=%v", 
+		now, shareLink.ExpiresAt, now.After(shareLink.ExpiresAt))
+	
+	if now.After(shareLink.ExpiresAt) {
+		// Optionally delete expired link
+		db.Delete(&shareLink)
+		log.Printf("❌ Share link expired and deleted: token=%s", shareToken[:10]+"...")
+		RespondWithError(w, http.StatusGone, "Share link has expired")
+		return
+	}
+
+	log.Printf("✅ Share link valid: token=%s, remaining=%v", 
+		shareToken[:10]+"...", shareLink.ExpiresAt.Sub(now))
+
+	// Return shared note data (without encrypted key - key should be in URL fragment)
+	RespondWithJSON(w, http.StatusOK, models.SharedNoteResponse{
+		ID:               shareLink.Note.ID,
+		Title:            shareLink.Note.Title,
+		EncryptedContent: shareLink.Note.EncryptedContent,
+		IV:               shareLink.Note.IV,
+		CreatedAt:        shareLink.Note.CreatedAt,
+		ExpiresAt:        shareLink.ExpiresAt,
+		OwnerUsername:    shareLink.User.Username,
+	})
+}
+
+// generateSecureToken generates a cryptographically secure random token
+func generateSecureToken(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	// URL-safe base64 encoding
+	return base64.URLEncoding.EncodeToString(bytes), nil
 }

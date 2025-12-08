@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -21,6 +22,9 @@ func main() {
 	if err := database.InitDB(&models.User{}, &models.Note{}, &models.SharedLink{}); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
+
+	// Start background job to cleanup expired shared links
+	go cleanupExpiredLinks()
 
 	// Setup routes
 	setupRoutes()
@@ -125,6 +129,34 @@ func NotesDetailRouter(w http.ResponseWriter, r *http.Request) {
 
 // SharesRouter handles share-related endpoints
 func SharesRouter(w http.ResponseWriter, r *http.Request) {
-	// Placeholder for share routes
-	handlers.RespondWithError(w, http.StatusNotImplemented, "Share endpoint not yet implemented")
+	// Extract token from path: /api/shares/:token
+	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/shares/"), "/")
+	if len(pathParts) == 0 || pathParts[0] == "" {
+		handlers.RespondWithError(w, http.StatusBadRequest, "Share token is required")
+		return
+	}
+
+	// Handle GET request to access shared note
+	if r.Method == http.MethodGet {
+		handlers.GetSharedNoteHandler(w, r)
+		return
+	}
+
+	handlers.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+}
+
+// cleanupExpiredLinks runs periodically to delete expired shared links
+func cleanupExpiredLinks() {
+	ticker := time.NewTicker(1 * time.Hour) // Run cleanup every hour
+	defer ticker.Stop()
+
+	for range ticker.C {
+		db := database.GetDB()
+		result := db.Where("expires_at < ?", time.Now()).Delete(&models.SharedLink{})
+		if result.Error != nil {
+			log.Printf("Error cleaning up expired links: %v", result.Error)
+		} else if result.RowsAffected > 0 {
+			log.Printf("Cleaned up %d expired shared links", result.RowsAffected)
+		}
+	}
 }

@@ -27,7 +27,8 @@ type CreateNoteRequest struct {
 
 // CreateShareRequest for creating a share link
 type CreateShareRequest struct {
-	DurationHours int `json:"duration_hours"` // How many hours the link is valid (default 24)
+	DurationHours   int `json:"duration_hours"`   // How many hours the link is valid (default 24)
+	DurationMinutes int `json:"duration_minutes"` // Alternative: duration in minutes (for testing)
 }
 
 // Response Models
@@ -66,4 +67,24 @@ type NoteResponse struct {
 type ListNotesResponse struct {
 	Notes []NoteResponse `json:"notes"`
 	Count int            `json:"count"`
+}
+
+// SharedNoteResponse for returning shared note data
+type SharedNoteResponse struct {
+	ID               uint      `json:"id"`
+	Title            string    `json:"title"`
+	EncryptedContent string    `json:"encrypted_content"`
+	IV               string    `json:"iv"`
+	CreatedAt        time.Time `json:"created_at"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	OwnerUsername    string    `json:"owner_username"`
+}
+
+// ShareLinkResponse for returning share link info
+type ShareLinkResponse struct {
+	Success    bool      `json:"success"`
+	ShareToken string    `json:"share_token"`
+	ShareURL   string    `json:"share_url"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	Message    string    `json:"message"`
 }

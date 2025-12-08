@@ -7,6 +7,7 @@ import (
 	"lab02_mahoa/client/api"
 	"lab02_mahoa/client/crypto"
 	"path/filepath"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -61,37 +62,41 @@ func Screen(window fyne.Window, apiClient *api.Client, username string, onLogout
 	// Refresh function - will be defined recursively
 	var refreshNotes func()
 	refreshNotes = func() {
-		// Clear previous list
-		notesContainer.RemoveAll()
-
 		// Call API to get notes
 		notes, err := apiClient.ListNotes()
-		if err != nil {
-			statusLabel.SetText("❌ Error loading notes: " + err.Error())
-			notesContainer.Add(widget.NewLabel("❌ Error loading notes"))
-			notesContainer.Refresh()
-			return
-		}
-
-		if len(notes) == 0 {
-			notesContainer.Add(
-				container.NewCenter(
-					widget.NewLabel("📭 No notes yet. Create your first note!"),
-				),
-			)
-			statusLabel.SetText("✅ No notes found")
-		} else {
-			statusLabel.SetText(fmt.Sprintf("✅ %d notes loaded", len(notes)))
-
-			for _, note := range notes {
-				// Create note card
-				noteCard := createNoteCard(note, apiClient, window, refreshNotes)
-				notesContainer.Add(noteCard)
+		
+		// Update UI in main thread
+		fyne.Do(func() {
+			// Clear previous list
+			notesContainer.RemoveAll()
+			
+			if err != nil {
+				statusLabel.SetText("❌ Error loading notes: " + err.Error())
+				notesContainer.Add(widget.NewLabel("❌ Error loading notes"))
+				notesContainer.Refresh()
+				return
 			}
-		}
 
-		notesContainer.Refresh()
-		notesScroll.Refresh()
+			if len(notes) == 0 {
+				notesContainer.Add(
+					container.NewCenter(
+						widget.NewLabel("📭 No notes yet. Create your first note!"),
+					),
+				)
+				statusLabel.SetText("✅ No notes found")
+			} else {
+				statusLabel.SetText(fmt.Sprintf("✅ %d notes loaded", len(notes)))
+
+				for _, note := range notes {
+					// Create note card
+					noteCard := createNoteCard(note, apiClient, window, refreshNotes)
+					notesContainer.Add(noteCard)
+				}
+			}
+
+			notesContainer.Refresh()
+			notesScroll.Refresh()
+		})
 	}
 
 	// Upload section with card background
@@ -302,15 +307,7 @@ func createNoteCard(note api.Note, apiClient *api.Client, window fyne.Window, on
 
 	// Share button (to create share link)
 	shareBtn := widget.NewButton("🔗 Share", func() {
-		if shareToken, err := apiClient.CreateShare(note.ID, 24); err != nil {
-			dialog.ShowError(fmt.Errorf("share failed: %w", err), window)
-		} else {
-			shareURL := fmt.Sprintf("http://localhost:8080/share/%s", shareToken)
-			dialog.ShowInformation("✅ Share Link Created", 
-				fmt.Sprintf("Share URL:\n\n%s\n\n⏰ Valid for 24 hours\n🔒 Encrypted end-to-end", shareURL), 
-				window)
-			onRefresh()
-		}
+		showShareOptionsDialog(window, apiClient, note, onRefresh)
 	})
 	shareBtn.Importance = widget.HighImportance
 
@@ -381,4 +378,262 @@ func createNoteCard(note api.Note, apiClient *api.Client, window fyne.Window, on
 	)
 
 	return cardWithShadow
+}
+
+// showShareOptionsDialog shows dialog to select share duration before creating link
+func showShareOptionsDialog(window fyne.Window, apiClient *api.Client, note api.Note, onRefresh func()) {
+	// Duration options (3 minutes for testing purposes)
+	durationOptions := []string{"3 minutes (TEST)", "1 hour", "6 hours", "12 hours", "24 hours", "48 hours", "7 days"}
+	
+	// Default selection
+	selectedDuration := "24 hours"
+	
+	// Radio group for duration selection
+	durationRadio := widget.NewRadioGroup(durationOptions, func(selected string) {
+		selectedDuration = selected
+	})
+	durationRadio.SetSelected("24 hours")
+
+	// Title
+	title := widget.NewLabelWithStyle(fmt.Sprintf("📄 Share: %s", note.Title),
+		fyne.TextAlignCenter,
+		fyne.TextStyle{Bold: true})
+
+	// Info
+	infoLabel := widget.NewLabel("⏰ Select how long this link will be valid:")
+	infoLabel.Wrapping = fyne.TextWrapWord
+
+	// Content
+	content := container.NewVBox(
+		title,
+		widget.NewSeparator(),
+		infoLabel,
+		durationRadio,
+		widget.NewSeparator(),
+	)
+
+	// Create and Cancel buttons
+	var d dialog.Dialog
+	
+	createBtn := widget.NewButton("✅ Create Link", func() {
+		// Hide options dialog
+		d.Hide()
+		
+		// Show loading
+		progressDialog := dialog.NewCustom("", "", 
+			container.NewVBox(
+				widget.NewProgressBarInfinite(),
+				widget.NewLabel("Creating share link..."),
+			), window)
+		progressDialog.Show()
+		
+		// Create share in background
+		go func() {
+			var shareToken string
+			var err error
+			
+			// Use appropriate API based on selected duration
+			if selectedDuration == "3 minutes" {
+				shareToken, err = apiClient.CreateShareWithMinutes(note.ID, 3)
+			} else {
+				// Parse hours from selection
+				var hours int
+				switch selectedDuration {
+				case "1 hour":
+					hours = 1
+				case "6 hours":
+					hours = 6
+				case "12 hours":
+					hours = 12
+				case "24 hours":
+					hours = 24
+				case "48 hours":
+					hours = 48
+				case "7 days":
+					hours = 168
+				default:
+					hours = 24
+				}
+				shareToken, err = apiClient.CreateShare(note.ID, hours)
+			}
+			
+			// Close progress dialog and update UI in main thread
+			fyne.Do(func() {
+				progressDialog.Hide()
+				
+				if err != nil {
+					dialog.ShowError(fmt.Errorf("share failed: %w", err), window)
+					return
+				}
+				
+				shareURL := fmt.Sprintf("http://localhost:8080/api/shares/%s", shareToken)
+				showShareResultDialog(window, shareURL, note.Title, selectedDuration)
+				onRefresh()
+			})
+		}()
+	})
+	createBtn.Importance = widget.HighImportance
+
+	// Button row
+	buttons := container.NewHBox(
+		layout.NewSpacer(),
+		widget.NewButton("Cancel", func() { d.Hide() }),
+		createBtn,
+	)
+	
+	// Final content with buttons
+	finalContent := container.NewVBox(
+		content,
+		buttons,
+	)
+
+	// Create dialog
+	d = dialog.NewCustom("Create Share Link", "", finalContent, window)
+	d.Resize(fyne.NewSize(450, 400))
+	d.Show()
+}
+
+// showShareResultDialog displays the final share link with copy functionality
+func showShareResultDialog(window fyne.Window, shareURL string, noteTitle string, duration string) {
+	// Create title
+	title := widget.NewLabelWithStyle("🎉 Share Link Created Successfully!", 
+		fyne.TextAlignCenter, 
+		fyne.TextStyle{Bold: true})
+
+	// Note title
+	noteTitleLabel := widget.NewLabelWithStyle(fmt.Sprintf("📄 %s", noteTitle),
+		fyne.TextAlignCenter,
+		fyne.TextStyle{Italic: true})
+
+	// URL display (read-only entry for easy selection)
+	urlEntry := widget.NewEntry()
+	urlEntry.SetText(shareURL)
+	urlEntry.Disable() // Make it read-only but still selectable
+	urlEntry.TextStyle = fyne.TextStyle{Monospace: true}
+
+	// Status label for copy feedback
+	statusLabel := widget.NewLabel("")
+	statusLabel.Alignment = fyne.TextAlignCenter
+
+	// Copy button with icon
+	copyBtn := widget.NewButton("📋 Copy to Clipboard", func() {
+		window.Clipboard().SetContent(shareURL)
+		statusLabel.SetText("✅ Link copied to clipboard!")
+		statusLabel.Refresh()
+		
+		// Reset status after 3 seconds
+		go func() {
+			time.Sleep(3 * time.Second)
+			fyne.Do(func() {
+				statusLabel.SetText("")
+				statusLabel.Refresh()
+			})
+		}()
+	})
+	copyBtn.Importance = widget.HighImportance
+
+	// Info section with duration
+	infoLines := fmt.Sprintf("⏰ Valid for %s\n🔒 End-to-end encrypted\n🌐 Anyone with this link can view the note", duration)
+	infoText := widget.NewLabel(infoLines)
+	infoText.Wrapping = fyne.TextWrapWord
+	infoText.Alignment = fyne.TextAlignCenter
+
+	// Info box with background
+	infoBg := canvas.NewRectangle(color.RGBA{R: 239, G: 246, B: 255, A: 255}) // Light blue
+	infoBox := container.NewMax(
+		infoBg,
+		container.NewPadded(infoText),
+	)
+
+	// Warning box
+	warningBg := canvas.NewRectangle(color.RGBA{R: 254, G: 243, B: 199, A: 255}) // Light yellow
+	warningText := widget.NewLabel("⚠️ Keep this link secure! Anyone with access can view the encrypted content.")
+	warningText.Wrapping = fyne.TextWrapWord
+	warningText.Alignment = fyne.TextAlignCenter
+	warningBox := container.NewMax(
+		warningBg,
+		container.NewPadded(warningText),
+	)
+
+	// Content layout
+	content := container.NewVBox(
+		title,
+		widget.NewSeparator(),
+		noteTitleLabel,
+		widget.NewLabel(""), // Spacer
+		widget.NewLabelWithStyle("Share this link:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		urlEntry,
+		copyBtn,
+		statusLabel,
+		widget.NewLabel(""), // Spacer
+		infoBox,
+		widget.NewLabel(""), // Spacer
+		warningBox,
+	)
+
+	// Create dialog
+	customDialog := dialog.NewCustom("", "Close", content, window)
+	customDialog.Resize(fyne.NewSize(650, 500))
+	customDialog.Show()
+}
+
+// showShareDialog displays a custom dialog with share link and copy button (legacy, kept for compatibility)
+func showShareDialog(window fyne.Window, shareURL string, noteTitle string) {
+	// Create title
+	title := widget.NewLabelWithStyle("🎉 Share Link Created Successfully!", 
+		fyne.TextAlignCenter, 
+		fyne.TextStyle{Bold: true})
+
+	// Note title
+	noteTitleLabel := widget.NewLabelWithStyle(fmt.Sprintf("📄 %s", noteTitle),
+		fyne.TextAlignCenter,
+		fyne.TextStyle{Italic: true})
+
+	// URL display (read-only entry for easy selection)
+	urlEntry := widget.NewEntry()
+	urlEntry.SetText(shareURL)
+	urlEntry.Disable() // Make it read-only but still selectable
+
+	// Status label for copy feedback
+	statusLabel := widget.NewLabel("")
+	statusLabel.Alignment = fyne.TextAlignCenter
+
+	// Copy button
+	copyBtn := widget.NewButton("📋 Copy Link", func() {
+		window.Clipboard().SetContent(shareURL)
+		statusLabel.SetText("✅ Link copied to clipboard!")
+		statusLabel.Refresh()
+	})
+	copyBtn.Importance = widget.HighImportance
+
+	// Info section
+	infoText := widget.NewLabel("⏰ Valid for 24 hours\n🔒 End-to-end encrypted\n🌐 Anyone with this link can view")
+	infoText.Wrapping = fyne.TextWrapWord
+	infoText.Alignment = fyne.TextAlignCenter
+
+	// Info box with background
+	infoBg := canvas.NewRectangle(color.RGBA{R: 239, G: 246, B: 255, A: 255}) // Light blue
+	infoBox := container.NewMax(
+		infoBg,
+		container.NewPadded(infoText),
+	)
+
+	// Content layout
+	content := container.NewVBox(
+		title,
+		widget.NewSeparator(),
+		noteTitleLabel,
+		widget.NewLabel(""), // Spacer
+		widget.NewLabelWithStyle("Share this link:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		urlEntry,
+		copyBtn,
+		statusLabel,
+		widget.NewLabel(""), // Spacer
+		infoBox,
+	)
+
+	// Create dialog
+	customDialog := dialog.NewCustom("", "Close", content, window)
+	customDialog.Resize(fyne.NewSize(600, 400))
+	customDialog.Show()
 }

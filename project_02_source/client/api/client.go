@@ -279,3 +279,45 @@ func (c *Client) CreateShare(id uint, durationHours int) (string, error) {
 
 	return "", fmt.Errorf("no share token in response")
 }
+
+// CreateShareWithMinutes creates a share link with duration in minutes (for testing)
+func (c *Client) CreateShareWithMinutes(id uint, durationMinutes int) (string, error) {
+	reqBody := map[string]int{
+		"duration_minutes": durationMinutes,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/notes/%d/share", BaseURL, id), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("create share failed: %s", string(body))
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return "", err
+	}
+
+	if shareToken, ok := response["share_token"].(string); ok {
+		return shareToken, nil
+	}
+
+	return "", fmt.Errorf("no share token in response")
+}
