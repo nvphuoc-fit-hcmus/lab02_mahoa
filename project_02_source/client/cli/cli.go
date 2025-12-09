@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -257,17 +258,22 @@ func handleUpload(args []string) {
 		fmt.Printf("❌ Error generating key: %v\n", err)
 		return
 	}
-	keyStr := fmt.Sprintf("key_%s", *title)
-
-	// Encrypt content
+	// Encrypt content with DEK
 	encryptedContent, iv, err := crypto.EncryptAES(content, key)
 	if err != nil {
 		fmt.Printf("❌ Error encrypting: %v\n", err)
 		return
 	}
 
-	// Encrypt key
-	encryptedKey, _, err := crypto.EncryptAES(keyStr, key)
+	// Derive KEK from password
+	fmt.Print("Enter your password to encrypt key: ")
+	var password string
+	fmt.Scanln(&password)
+	kek := crypto.DeriveKeyFromPassword(password, nil)
+
+	// Encrypt DEK with KEK
+	keyBase64 := base64.StdEncoding.EncodeToString(key)
+	encryptedKey, ivKey, err := crypto.EncryptAES(keyBase64, kek)
 	if err != nil {
 		fmt.Printf("❌ Error encrypting key: %v\n", err)
 		return
@@ -275,7 +281,7 @@ func handleUpload(args []string) {
 
 	// Create client and upload
 	client := &api.Client{Token: token}
-	if err := client.CreateNote(*title, encryptedContent, encryptedKey, iv); err != nil {
+	if err := client.CreateNote(*title, encryptedContent, iv, encryptedKey, ivKey); err != nil {
 		fmt.Printf("❌ Error uploading: %v\n", err)
 		return
 	}

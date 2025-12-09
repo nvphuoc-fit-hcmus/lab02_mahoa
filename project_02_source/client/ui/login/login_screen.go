@@ -3,6 +3,8 @@ package login
 import (
 	"image/color"
 	"lab02_mahoa/client/api"
+	"lab02_mahoa/client/crypto"
+	"log"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -195,6 +197,48 @@ func ShowLoginScreen(window fyne.Window, apiClient *api.Client, onLoginSuccess f
 		api.AuthToken = token
 		api.CurrentUsername = username
 		api.CurrentPassword = password
+
+		// Load or generate DH keypair for E2EE
+		go func() {
+			// Try to load existing keypair from encrypted file
+			privateKey, err := crypto.LoadDHKeyPair(username, password)
+			if err != nil {
+				log.Printf("Warning: Failed to load DH keypair: %v", err)
+				return
+			}
+
+			// If no keypair exists, generate new one
+			if privateKey == nil {
+				log.Printf("No existing keypair found, generating new one...")
+				keyPair, err := crypto.GenerateDHKeyPair()
+				if err != nil {
+					log.Printf("Warning: Failed to generate DH keypair: %v", err)
+					return
+				}
+				privateKey = keyPair.PrivateKey
+
+				// Save keypair to encrypted file
+				if err := crypto.SaveDHKeyPair(username, password, privateKey); err != nil {
+					log.Printf("Warning: Failed to save DH keypair: %v", err)
+				} else {
+					log.Printf("DH keypair saved to keystore")
+				}
+
+				// Register public key with server (first time only)
+				publicKeyBase64 := crypto.PublicKeyToBase64(privateKey.PublicKey())
+				if err := apiClient.UpdatePublicKey(publicKeyBase64); err != nil {
+					log.Printf("Warning: Failed to register DH public key: %v", err)
+				} else {
+					log.Printf("DH public key registered successfully")
+				}
+			} else {
+				log.Printf("Loaded existing DH keypair from keystore")
+			}
+
+			// Store private key in memory for this session
+			api.CurrentDHPrivateKey = privateKey
+		}()
+
 		setStatus("✅ Đăng nhập thành công!", false)
 		onLoginSuccess(username, key)
 	})

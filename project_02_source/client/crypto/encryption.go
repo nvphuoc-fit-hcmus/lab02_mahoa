@@ -4,9 +4,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"io"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 // GenerateKey generates a random AES-256 key
@@ -74,4 +77,14 @@ func DecryptAES(ciphertext string, ivStr string, key []byte) (string, error) {
 	}
 
 	return string(plaintext), nil
+}
+
+// DeriveKeyFromPassword derives a 256-bit key from password using PBKDF2
+func DeriveKeyFromPassword(password string, salt []byte) []byte {
+	if len(salt) == 0 {
+		// Use a fixed salt for simplicity (in production, use per-user salt)
+		salt = []byte("secure-notes-app-v1-salt")
+	}
+	// PBKDF2 with SHA-256, 100000 iterations, 32 bytes output
+	return pbkdf2.Key([]byte(password), salt, 100000, 32, sha256.New)
 }
