@@ -1,0 +1,152 @@
+
+// E2EEShare represents an E2EE share
+type E2EEShare struct {
+	ID               uint      `json:"id"`
+	NoteTitle        string    `json:"note_title"`
+	SenderUsername   string    `json:"sender_username"`
+	SenderPublicKey  string    `json:"sender_public_key"`
+	EncryptedContent string    `json:"encrypted_content"`
+	ContentIV        string    `json:"content_iv"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+// ListE2EESharesResponse represents the response from listing E2EE shares
+type ListE2EESharesResponse struct {
+	Shares []E2EEShare `json:"shares"`
+	Count  int         `json:"count"`
+}
+
+// CreateE2EEShareRequest represents E2EE share creation data
+type CreateE2EEShareRequest struct {
+	RecipientUsername string `json:"recipient_username"`
+	SenderPublicKey   string `json:"sender_public_key"`
+	EncryptedContent  string `json:"encrypted_content"`
+	ContentIV         string `json:"content_iv"`
+	DurationHours     int    `json:"duration_hours,omitempty"`
+}
+
+// CreateE2EEShare creates an E2EE share with a specific user
+func (c *Client) CreateE2EEShare(noteID uint, recipientUsername, senderPublicKey, encryptedContent, contentIV string, durationHours int) (uint, error) {
+	reqBody := CreateE2EEShareRequest{
+		RecipientUsername: recipientUsername,
+		SenderPublicKey:   senderPublicKey,
+		EncryptedContent:  encryptedContent,
+		ContentIV:         contentIV,
+		DurationHours:     durationHours,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return 0, err
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/notes/%d/e2ee", BaseURL, noteID), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return 0, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("create E2EE share failed: %s", string(body))
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return 0, err
+	}
+
+	if shareID, ok := response["share_id"].(float64); ok {
+		return uint(shareID), nil
+	}
+
+	return 0, fmt.Errorf("no share ID in response")
+}
+
+// ListE2EEShares retrieves all E2EE shares received by the user
+func (c *Client) ListE2EEShares() ([]E2EEShare, error) {
+	req, err := http.NewRequest("GET", BaseURL+"/e2ee", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("list E2EE shares failed: %s", string(body))
+	}
+
+	var response ListE2EESharesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, err
+	}
+
+	return response.Shares, nil
+}
+
+// GetE2EEShare retrieves a specific E2EE share by ID
+func (c *Client) GetE2EEShare(shareID uint) (E2EEShare, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/e2ee/%d", BaseURL, shareID), nil)
+	if err != nil {
+		return E2EEShare{}, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return E2EEShare{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return E2EEShare{}, fmt.Errorf("get E2EE share failed: %s", string(body))
+	}
+
+	var share E2EEShare
+	if err := json.NewDecoder(resp.Body).Decode(&share); err != nil {
+		return E2EEShare{}, err
+	}
+
+	return share, nil
+}
+
+// DeleteE2EEShare deletes an E2EE share (revokes sharing)
+func (c *Client) DeleteE2EEShare(shareID uint) error {
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/e2ee/%d", BaseURL, shareID), nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete E2EE share failed: %s", string(body))
+	}
+
+	return nil
+}

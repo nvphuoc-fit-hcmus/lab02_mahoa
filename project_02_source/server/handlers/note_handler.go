@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"lab02_mahoa/server/auth"
 	"lab02_mahoa/server/database"
 	"lab02_mahoa/server/models"
@@ -38,10 +40,10 @@ func CreateNoteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate input
-	if req.Title == "" || req.EncryptedContent == "" || req.IV == "" || req.EncryptedKey == "" { // <--- CẬP NHẬT DÒNG NÀY
-        RespondWithError(w, http.StatusBadRequest, "Title, content, IV and encrypted key are required")
-        return
-    }
+	if req.Title == "" || req.EncryptedContent == "" || req.IV == "" || req.EncryptedKey == "" || req.EncryptedKeyIV == "" {
+		RespondWithError(w, http.StatusBadRequest, "Title, content, IV, encrypted key and encrypted key IV are required")
+		return
+	}
 
 	db := database.GetDB()
 
@@ -52,6 +54,7 @@ func CreateNoteHandler(w http.ResponseWriter, r *http.Request) {
 		EncryptedContent: req.EncryptedContent,
 		IV:               req.IV,
 		EncryptedKey:     req.EncryptedKey,
+		EncryptedKeyIV:   req.EncryptedKeyIV,
 	}
 
 	if err := db.Create(&note).Error; err != nil {
@@ -64,8 +67,9 @@ func CreateNoteHandler(w http.ResponseWriter, r *http.Request) {
 		ID:               note.ID,
 		Title:            note.Title,
 		EncryptedContent: note.EncryptedContent,
-		EncryptedKey:     note.EncryptedKey,
 		IV:               note.IV,
+		EncryptedKey:     note.EncryptedKey,
+		EncryptedKeyIV:   note.EncryptedKeyIV,
 		CreatedAt:        note.CreatedAt,
 	})
 }
@@ -105,8 +109,9 @@ func ListNotesHandler(w http.ResponseWriter, r *http.Request) {
 			ID:               note.ID,
 			Title:            note.Title,
 			EncryptedContent: note.EncryptedContent,
-			EncryptedKey:     note.EncryptedKey,
 			IV:               note.IV,
+			EncryptedKey:     note.EncryptedKey,
+			EncryptedKeyIV:   note.EncryptedKeyIV,
 			CreatedAt:        note.CreatedAt,
 			IsShared:         shareCount > 0,
 		}
@@ -163,8 +168,9 @@ func GetNoteHandler(w http.ResponseWriter, r *http.Request) {
 		ID:               note.ID,
 		Title:            note.Title,
 		EncryptedContent: note.EncryptedContent,
-		EncryptedKey:     note.EncryptedKey,
 		IV:               note.IV,
+		EncryptedKey:     note.EncryptedKey,
+		EncryptedKeyIV:   note.EncryptedKeyIV,
 		CreatedAt:        note.CreatedAt,
 	})
 }
@@ -360,10 +366,31 @@ func CreateShareHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Create share link
 	shareLink := models.SharedLink{
-		NoteID:     uint(noteID),
-		UserID:     claims.UserID,
-		ShareToken: shareToken,
-		ExpiresAt:  time.Now().Add(duration),
+		NoteID:          uint(noteID),
+		UserID:          claims.UserID,
+		ShareToken:      shareToken,
+		ExpiresAt:       time.Now().Add(duration),
+		MaxAccessCount:  0, // Default: unlimited
+		AccessCount:     0,
+		RequirePassword: false,
+		PasswordHash:    "",
+	}
+
+	// Handle optional password protection
+	if req.Password != nil && *req.Password != "" {
+		passwordHash, err := auth.HashPassword(*req.Password)
+		if err != nil {
+			log.Printf("Error hashing password: %v", err)
+			RespondWithError(w, http.StatusInternalServerError, "Failed to hash password")
+			return
+		}
+		shareLink.RequirePassword = true
+		shareLink.PasswordHash = passwordHash
+	}
+
+	// Handle optional max access count
+	if req.MaxAccessCount != nil && *req.MaxAccessCount > 0 {
+		shareLink.MaxAccessCount = *req.MaxAccessCount
 	}
 
 	if err := db.Create(&shareLink).Error; err != nil {
@@ -372,18 +399,20 @@ func CreateShareHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("✅ Share link created: token=%s, expires_at=%v, duration=%v", 
-		shareToken[:10]+"...", shareLink.ExpiresAt, duration)
+	log.Printf("✅ Share link created: token=%s, expires_at=%v, duration=%v, max_access=%d, password_protected=%v", 
+		shareToken[:10]+"...", shareLink.ExpiresAt, duration, shareLink.MaxAccessCount, shareLink.RequirePassword)
 
 	// Create share URL (the encryption key should be added by client in fragment)
 	shareURL := fmt.Sprintf("http://localhost:8080/share/%s", shareToken)
 
 	RespondWithJSON(w, http.StatusCreated, models.ShareLinkResponse{
-		Success:    true,
-		ShareToken: shareToken,
-		ShareURL:   shareURL,
-		ExpiresAt:  shareLink.ExpiresAt,
-		Message:    "Share link created successfully",
+		Success:         true,
+		ShareToken:      shareToken,
+		ShareURL:        shareURL,
+		ExpiresAt:       shareLink.ExpiresAt,
+		MaxAccessCount:  shareLink.MaxAccessCount,
+		RequirePassword: shareLink.RequirePassword,
+		Message:         "Share link created successfully",
 	})
 }
 
@@ -423,15 +452,60 @@ func GetSharedNoteHandler(w http.ResponseWriter, r *http.Request) {
 		now, shareLink.ExpiresAt, now.After(shareLink.ExpiresAt))
 	
 	if now.After(shareLink.ExpiresAt) {
-		// Optionally delete expired link
+		// Delete expired link
 		db.Delete(&shareLink)
 		log.Printf("❌ Share link expired and deleted: token=%s", shareToken[:10]+"...")
 		RespondWithError(w, http.StatusGone, "Share link has expired")
 		return
 	}
 
-	log.Printf("✅ Share link valid: token=%s, remaining=%v", 
-		shareToken[:10]+"...", shareLink.ExpiresAt.Sub(now))
+	// Check if max access count reached
+	if shareLink.MaxAccessCount > 0 && shareLink.AccessCount >= shareLink.MaxAccessCount {
+		// Delete exhausted link
+		db.Delete(&shareLink)
+		log.Printf("❌ Share link exhausted and deleted: token=%s, access_count=%d/%d", 
+			shareToken[:10]+"...", shareLink.AccessCount, shareLink.MaxAccessCount)
+		RespondWithError(w, http.StatusGone, "Share link has reached maximum access count")
+		return
+	}
+
+	// Check password if required
+	log.Printf("🔐 Password check: RequirePassword=%v, PasswordHash=%v", 
+		shareLink.RequirePassword, shareLink.PasswordHash != "")
+	
+	if shareLink.RequirePassword {
+		var req models.AccessShareRequest
+		bodyBytes, _ := io.ReadAll(r.Body)
+		log.Printf("📥 Request body received: %s", string(bodyBytes))
+		
+		// Restore body for json.Decode
+		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Password == "" {
+			log.Printf("❌ Password required but not provided. Error: %v, Password empty: %v", err, req.Password == "")
+			RespondWithError(w, http.StatusUnauthorized, "Password required to access this share")
+			return
+		}
+
+		// Verify password
+		if err := auth.CheckPassword(req.Password, shareLink.PasswordHash); err != nil {
+			log.Printf("❌ Wrong password for share link: token=%s", shareToken[:10]+"...")
+			RespondWithError(w, http.StatusUnauthorized, "Incorrect password")
+			return
+		}
+
+		log.Printf("✅ Password verified for share link: token=%s", shareToken[:10]+"...")
+	}
+
+	// Increment access count
+	shareLink.AccessCount++
+	if err := db.Save(&shareLink).Error; err != nil {
+		log.Printf("Error updating access count: %v", err)
+		// Don't fail the request, just log the error
+	}
+
+	log.Printf("✅ Share link valid: token=%s, remaining=%v, access_count=%d/%d", 
+		shareToken[:10]+"...", shareLink.ExpiresAt.Sub(now), shareLink.AccessCount, shareLink.MaxAccessCount)
 
 	// Return shared note data (without encrypted key - key should be in URL fragment)
 	RespondWithJSON(w, http.StatusOK, models.SharedNoteResponse{

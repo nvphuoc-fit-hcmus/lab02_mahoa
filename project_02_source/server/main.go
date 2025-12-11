@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"lab02_mahoa/server/database"
 	"lab02_mahoa/server/handlers"
+	"lab02_mahoa/server/jobs"
 	"lab02_mahoa/server/models"
 	"log"
 	"net/http"
 	"os"
 	"strings"
-	"time"
 )
 
 func main() {
@@ -19,12 +19,13 @@ func main() {
 	}
 
 	// Initialize database with models
-	if err := database.InitDB(&models.User{}, &models.Note{}, &models.SharedLink{}); err != nil {
+	if err := database.InitDB(&models.User{}, &models.Note{}, &models.SharedLink{}, &models.E2EEShare{}); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	// Start background job to cleanup expired shared links
-	go cleanupExpiredLinks()
+	// Start background cleanup job for expired shares and links
+	db := database.GetDB()
+	jobs.StartCleanupJob(db)
 
 	// Setup routes
 	setupRoutes()
@@ -64,8 +65,15 @@ func setupRoutes() {
 		NotesRouter(w, r)
 	}))
 
-	// Note detail routes (for delete, revoke)
+	// Note detail routes (for delete, revoke, e2ee)
 	http.HandleFunc("/api/notes/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		// Check if this is an E2EE share creation request
+		if strings.HasSuffix(r.URL.Path, "/e2ee") {
+			if r.Method == http.MethodPost {
+				handlers.CreateE2EEShareHandler(w, r)
+				return
+			}
+		}
 		NotesDetailRouter(w, r)
 	}))
 
@@ -73,6 +81,19 @@ func setupRoutes() {
 	http.HandleFunc("/api/shares/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		SharesRouter(w, r)
 	}))
+
+	// E2EE routes
+	http.HandleFunc("/api/e2ee", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		E2EEListRouter(w, r)
+	}))
+
+	http.HandleFunc("/api/e2ee/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		E2EEDetailRouter(w, r)
+	}))
+
+	// User public key routes
+	http.HandleFunc("/api/user/publickey", corsMiddleware(handlers.UpdatePublicKeyHandler))
+	http.HandleFunc("/api/users/", corsMiddleware(handlers.GetPublicKeyHandler))
 }
 
 // NotesRouter handles /api/notes endpoint (list and create)
@@ -145,18 +166,25 @@ func SharesRouter(w http.ResponseWriter, r *http.Request) {
 	handlers.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
 }
 
-// cleanupExpiredLinks runs periodically to delete expired shared links
-func cleanupExpiredLinks() {
-	ticker := time.NewTicker(1 * time.Hour) // Run cleanup every hour
-	defer ticker.Stop()
+// E2EEListRouter handles /api/e2ee endpoint (list E2EE shares)
+func E2EEListRouter(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		handlers.ListE2EESharesHandler(w, r)
+		return
+	}
+	handlers.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+}
 
-	for range ticker.C {
-		db := database.GetDB()
-		result := db.Where("expires_at < ?", time.Now()).Delete(&models.SharedLink{})
-		if result.Error != nil {
-			log.Printf("Error cleaning up expired links: %v", result.Error)
-		} else if result.RowsAffected > 0 {
-			log.Printf("Cleaned up %d expired shared links", result.RowsAffected)
-		}
+// E2EEDetailRouter handles /api/e2ee/:id endpoint (get, delete)
+func E2EEDetailRouter(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		handlers.GetE2EEShareHandler(w, r)
+	case http.MethodDelete:
+		handlers.DeleteE2EEShareHandler(w, r)
+	default:
+		handlers.RespondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
+
+
